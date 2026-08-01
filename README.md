@@ -47,6 +47,23 @@ Google Drive / SMC_ICT_3_LIVE
 
 Git 저장소에는 `data/raw`, `data/silver`, `data/gold`를 커밋하지 않습니다. 데이터와 코드를 분리함으로써 Git 이력을 가볍게 유지하고, 데이터 릴리스는 별도 해시와 매니페스트로 고정합니다.
 
+## 배포된 데이터 릴리스
+
+프로젝트 Drive: <https://drive.google.com/drive/folders/13jbg62qO6LkFHO0apvLEDhOSZBdbm_c1>
+
+### `golden-2024-01-v1.0.0`
+
+- 기간: `[2024-01-01, 2024-02-01)` UTC
+- 원천: 4개 심볼 × Spot 거래가 + USD-M 거래가·mark·index·premium = 20개 공식 월간 ZIP
+- Bronze/Silver: 공식 체크섬 통과 20개, 정규화 1분 레코드 892,800개
+- 품질: 정확 중복 0개, 결측 봉 0개
+- Gold: 5m·15m·1h·4h 80개 파일, 256,680개 레코드, 불완전 버킷 0개
+- 공식 CI 전체 번들: <https://drive.google.com/file/d/15fJ3v2pHF9ctUaQQHy6XxGy8qCxjJKAw/view>
+- 릴리스 폴더: <https://drive.google.com/drive/folders/159EwwmXK8Ef-u0islmiPdUHMxJmglgFC>
+- 고정 인덱스와 SHA-256: [`data/releases/golden-2024-01-v1.0.0.json`](data/releases/golden-2024-01-v1.0.0.json)
+
+Bronze·Silver·Gold·품질 번들은 각각 해당 Drive 계층에도 배치되어 있습니다. 연구 코드는 사람이 보기에 같은 파일명을 찾지 말고 릴리스 ID와 SHA-256을 함께 고정해야 합니다.
+
 ## 빠른 시작
 
 Python 3.11 이상이면 계획·다운로드·검증·CSV.gz 생성에 외부 패키지가 필요하지 않습니다.
@@ -116,9 +133,10 @@ smc-data plan --start 2017-01-01 --end 2026-07-31 --as-of 2026-08-02 \
 4. 정확 중복 제거와 충돌 중복 거부
 5. 결측 탐지와 무보간 원칙
 6. 참조가격 보조 필드의 의미 분리
-7. 불완전 버킷 제거
-8. byte-deterministic gzip 출력
-9. 골든 매니페스트 재현성
+7. premium index의 정상적인 음수 허용과 mark/index/trade 가격의 비음수 제약
+8. 불완전 버킷 제거
+9. byte-deterministic gzip 출력
+10. 골든 매니페스트 재현성
 
 ## 연구자 경계
 

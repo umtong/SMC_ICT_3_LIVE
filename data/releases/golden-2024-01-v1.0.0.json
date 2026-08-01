@@ -1,0 +1,127 @@
+{
+  "bronze_silver_quality": {
+    "catalog_sha256": "7c694f12792b99548df6e58ff8bb38dd57eb7c8af928870f654625c59fce8252",
+    "companion_checksum_files": 20,
+    "exact_duplicates_removed": 0,
+    "gap_count": 0,
+    "manifest_sha256": "2faee1f95f1ee4ec21a019b62f9090f1042bc22a82fbee3ec86b7db0b425f584",
+    "missing_bar_count": 0,
+    "raw_zip_files": 20,
+    "rows_read": 892800,
+    "rows_written": 892800,
+    "silver_files": 20,
+    "verified_source_objects": 20
+  },
+  "bundles": [
+    {
+      "bytes": 26512218,
+      "file": "market-data-golden-2024-01-bronze-v1.0.0.zip",
+      "sha256": "6b90a4d04c1e139bd5314dcadad7b0637acf709655b4ebd6fbece97d7e82a48a"
+    },
+    {
+      "bytes": 8892849,
+      "file": "market-data-golden-2024-01-gold-v1.0.0.zip",
+      "sha256": "3c3475401b2fbceb9a2d1c343456e0c1726b697801051afe997e926d85ff5149"
+    },
+    {
+      "bytes": 99135,
+      "file": "market-data-golden-2024-01-quality-v1.0.0.zip",
+      "sha256": "7d430bcb4a3d741c18610958d97229b1518ffd020091e4a7f860efb8fe1a1111"
+    },
+    {
+      "bytes": 32108472,
+      "file": "market-data-golden-2024-01-silver-v1.0.0.zip",
+      "sha256": "c3add2c96fefb6af630caefcc94848a83a8135ebb9774db6028b26ad52d6063e"
+    }
+  ],
+  "code": {
+    "pipeline_version": "1.0.0",
+    "repository": "umtong/SMC_ICT_3_LIVE",
+    "tested_head_commit": "c34201eace3acb3fcfeea71712b167af88111d86",
+    "tested_merge_commit": "0ce34e959875d5a29a2c63cac2282199065436ac"
+  },
+  "gold": {
+    "alignment": "UTC epoch-aligned",
+    "catalog_with_gold_sha256": "a852c521c8f4b5c99f0bf564d0f3d8eb5f6003ac2cd3ee1eb43066ca0fbccdbc",
+    "equivalence_check": "BTCUSDT spot 15m output was byte-identical to smc-data resample",
+    "gap_policy": "drop incomplete target buckets; never synthesize source bars",
+    "incomplete_buckets_dropped": 0,
+    "input_files": 20,
+    "output_files": 80,
+    "output_rows": 256680,
+    "pipeline_version": "1.0.0",
+    "release_id": "golden-2024-01-gold-v1.0.0",
+    "source_release": "golden-2024-01-v1.0.0",
+    "source_rows_reprocessed": 3571200,
+    "timeframes": [
+      "5m",
+      "15m",
+      "1h",
+      "4h"
+    ]
+  },
+  "google_drive": {
+    "files": {
+      "bronze_bundle": {
+        "id": "1-_Q9iq1zvEhR0sy6LC-Uo9dTgrMgjr_G",
+        "url": "https://drive.google.com/file/d/1-_Q9iq1zvEhR0sy6LC-Uo9dTgrMgjr_G/view"
+      },
+      "gold_bundle": {
+        "id": "1Bf46dDoz01CE_-KNEqqzGD3bSDkW04r7",
+        "url": "https://drive.google.com/file/d/1Bf46dDoz01CE_-KNEqqzGD3bSDkW04r7/view"
+      },
+      "official_ci_artifact": {
+        "id": "15fJ3v2pHF9ctUaQQHy6XxGy8qCxjJKAw",
+        "url": "https://drive.google.com/file/d/15fJ3v2pHF9ctUaQQHy6XxGy8qCxjJKAw/view"
+      },
+      "quality_bundle": {
+        "id": "16Gahsguxtmv0O2PY4gPgkgYZDH-ZB6XO",
+        "url": "https://drive.google.com/file/d/16Gahsguxtmv0O2PY4gPgkgYZDH-ZB6XO/view"
+      },
+      "silver_bundle": {
+        "id": "1xvQYPCtnOiLb4qQujH6jSH_Fn9qtdKt4",
+        "url": "https://drive.google.com/file/d/1xvQYPCtnOiLb4qQujH6jSH_Fn9qtdKt4/view"
+      }
+    },
+    "project_folder_id": "13jbg62qO6LkFHO0apvLEDhOSZBdbm_c1",
+    "project_folder_url": "https://drive.google.com/drive/folders/13jbg62qO6LkFHO0apvLEDhOSZBdbm_c1",
+    "release_folder_id": "159EwwmXK8Ef-u0islmiPdUHMxJmglgFC",
+    "release_folder_url": "https://drive.google.com/drive/folders/159EwwmXK8Ef-u0islmiPdUHMxJmglgFC"
+  },
+  "official_ci_artifact": {
+    "bytes": 55287217,
+    "file": "golden-2024-01-v1.0.0.zip",
+    "github_actions_artifact_id": 8823113846,
+    "sha256": "a1d9da44eea872c7c69d5350b449df649e3cb430620cb79e273e6881673790ac"
+  },
+  "policies": {
+    "duplicates": "remove exact duplicates with count; reject conflicting duplicates",
+    "gaps": "report; never price-fill",
+    "reference_semantics": "trade/mark/index/premium remain distinct; premium index may be signed",
+    "time": "[open_time_us, close_time_exclusive_us); available_time_us = close_time_exclusive_us"
+  },
+  "release_id": "golden-2024-01-v1.0.0",
+  "scope": {
+    "base_interval": "1m",
+    "period_utc": "[2024-01-01, 2024-02-01)",
+    "pre_materialized_gold_intervals": [
+      "5m",
+      "15m",
+      "1h",
+      "4h"
+    ],
+    "source_datasets": [
+      "spot klines",
+      "USD-M klines",
+      "USD-M markPriceKlines",
+      "USD-M indexPriceKlines",
+      "USD-M premiumIndexKlines"
+    ],
+    "symbols": [
+      "BTCUSDT",
+      "ETHUSDT",
+      "XRPUSDT",
+      "SOLUSDT"
+    ]
+  }
+}
