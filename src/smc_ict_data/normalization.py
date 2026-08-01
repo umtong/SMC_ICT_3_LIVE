@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
-from hashlib import sha256
 from pathlib import Path
 from typing import Iterator, TextIO
 import csv
@@ -171,12 +170,14 @@ def _decimal(value: str, field: str) -> Decimal:
     return result
 
 
-def _validate_ohlc(row: list[str], line_number: int) -> None:
+def _validate_ohlc(
+    row: list[str], line_number: int, *, allow_negative: bool = False
+) -> None:
     open_price = _decimal(row[1], "open")
     high = _decimal(row[2], "high")
     low = _decimal(row[3], "low")
     close = _decimal(row[4], "close")
-    if min(open_price, high, low, close) < 0:
+    if not allow_negative and min(open_price, high, low, close) < 0:
         raise DataContractError(f"negative price at source row {line_number}")
     if high < max(open_price, low, close):
         raise DataContractError(f"high violates OHLC ordering at source row {line_number}")
@@ -266,7 +267,11 @@ def normalize_kline_archive(
                 raise DataContractError(
                     f"source close time is inconsistent at row {line_number}: delta={close_delta}us"
                 )
-            _validate_ohlc(raw, line_number)
+            _validate_ohlc(
+                raw,
+                line_number,
+                allow_negative=ref.dataset == "premiumIndexKlines",
+            )
             if ref.kind == "kline":
                 _validate_trade_fields(raw, line_number)
 
@@ -410,13 +415,17 @@ def normalize_manifest(
         relative = Path(ref.relative_path)
         output_relative = relative.with_suffix("").with_suffix(".csv.gz")
         quality_relative = relative.with_suffix("").with_suffix(".quality.json")
-        reports.append(
-            normalize_kline_archive(
+        try:
+            report = normalize_kline_archive(
                 ref,
                 raw_path,
                 Path(silver_root) / output_relative,
                 Path(quality_root) / quality_relative,
                 expected_sha256=result.expected_sha256,
             )
-        )
+        except DataContractError as exc:
+            raise DataContractError(
+                f"{ref.dataset_name}/{ref.symbol}/{ref.period_start}: {exc}"
+            ) from exc
+        reports.append(report)
     return reports

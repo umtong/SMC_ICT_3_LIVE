@@ -1,4 +1,3 @@
-from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 import csv
@@ -117,6 +116,31 @@ def test_reference_kline_does_not_mislabel_auxiliary_fields_as_volume(tmp_path: 
     assert record["trade_count"] == ""
     assert record["source_field_5"] == "0"
     assert record["source_field_8"] == "20"
+
+
+def test_premium_index_allows_negative_values_but_mark_price_does_not(
+    tmp_path: Path,
+) -> None:
+    start = _epoch_ms()
+    negative = _row(start)
+    negative[1:5] = ["-0.001", "0.001", "-0.002", "-0.0005"]
+    archive = tmp_path / "negative_reference.zip"
+    _zip_rows(archive, [negative])
+
+    normalize_kline_archive(
+        _ref(kind="reference_kline", dataset="premiumIndexKlines"),
+        archive,
+        tmp_path / "premium.csv.gz",
+        tmp_path / "premium.json",
+    )
+
+    with pytest.raises(DataContractError, match="negative price"):
+        normalize_kline_archive(
+            _ref(kind="reference_kline", dataset="markPriceKlines"),
+            archive,
+            tmp_path / "mark.csv.gz",
+            tmp_path / "mark.json",
+        )
 
 
 def test_conflicting_duplicate_is_rejected(tmp_path: Path) -> None:

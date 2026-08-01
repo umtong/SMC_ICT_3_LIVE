@@ -40,15 +40,18 @@ jobs:
             --out release/RELEASE.json
       - name: Check release is non-empty
         run: |
-          test "$(find release/01_RAW_BRONZE -name '*.zip' | wc -l)" -ge 8
-          test "$(find release/02_NORMALIZED_SILVER -name '*.csv.gz' | wc -l)" -ge 8
+          test "$(find release/01_RAW_BRONZE -name '*.zip' | wc -l)" -eq 20
+          test "$(find release/02_NORMALIZED_SILVER -name '*.csv.gz' | wc -l)" -eq 20
           python - <<'PY'
           import json
           from pathlib import Path
           rows = [json.loads(line) for line in Path('release/04_CATALOG_QUALITY/download_report.jsonl').read_text().splitlines()]
-          failed = [r for r in rows if r['status'].startswith('failed') or 'mismatch' in r['status']]
-          if failed:
-              raise SystemExit(f"release contains failed source objects: {failed}")
+          accepted = {'downloaded_verified', 'verified_existing'}
+          rejected = [r for r in rows if r['status'] not in accepted]
+          if len(rows) != 20 or rejected:
+              raise SystemExit(
+                  f"golden release requires 20 verified source objects; rows={len(rows)}, rejected={rejected}"
+              )
           print({r['status'] for r in rows}, len(rows))
           PY
       - uses: actions/upload-artifact@v4

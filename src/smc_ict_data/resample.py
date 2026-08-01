@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from decimal import Decimal
 from pathlib import Path
-from typing import Iterable
 import csv
 import gzip
 import io
