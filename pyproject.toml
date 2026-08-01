@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "smc-ict-market-data"
+version = "1.0.0"
+description = "Reproducible BTC, ETH, XRP and SOL market-data foundation for SMC/ICT research"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "SMC/ICT 3 research project" }]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+parquet = ["pyarrow>=15"]
+analytics = ["duckdb>=1.0"]
+all = ["pyarrow>=15", "duckdb>=1.0", "pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+smc-data = "smc_ict_data.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

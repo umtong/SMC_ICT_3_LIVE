@@ -1,0 +1,20 @@
+{
+  "version": "1.0",
+  "generated_as_of_utc": "2026-08-02",
+  "manifests": [
+    {
+      "file": "golden_2024_01.csv",
+      "distribution": "git_and_drive",
+      "bytes": 8608,
+      "rows": 20,
+      "sha256": "2faee1f95f1ee4ec21a019b62f9090f1042bc22a82fbee3ec86b7db0b425f584"
+    },
+    {
+      "file": "full_history_candidates_2026-08-02.csv",
+      "distribution": "drive_regenerable",
+      "bytes": 1228708,
+      "rows": 2900,
+      "sha256": "2a74b4a05398f471081acac669885dbca4d87b7b6ef53c8a6ebdf4546e23281c"
+    }
+  ]
+}
