@@ -13,9 +13,15 @@ import os
 import zipfile
 
 from .archive import ArchiveRef, DownloadResult, file_sha256, read_manifest
+from .canonicalize import (
+    CanonicalizationStats,
+    SourceCanonicalizationError,
+    SourceTimeAnomaly,
+    canonicalize_kline_rows,
+)
 
 
-PIPELINE_VERSION = "1.0.1"
+PIPELINE_VERSION = "1.0.2"
 KLINE_OUTPUT_COLUMNS = (
     "exchange",
     "market_path",
@@ -78,6 +84,15 @@ class QualityReport:
     gaps: tuple[Gap, ...]
     source_close_time_anomaly_count: int = 0
     source_close_time_max_early_us: int = 0
+    source_open_time_anomaly_count: int = 0
+    source_open_time_max_late_us: int = 0
+    source_close_time_late_count: int = 0
+    source_close_time_max_late_us: int = 0
+    segmented_bar_count: int = 0
+    segmented_source_rows_merged: int = 0
+    quarantined_source_row_count: int = 0
+    quarantined_canonical_bar_count: int = 0
+    anomaly_examples: tuple[SourceTimeAnomaly, ...] = ()
     status: str = "valid"
     pipeline_version: str = PIPELINE_VERSION
 
@@ -172,9 +187,7 @@ def _decimal(value: str, field: str) -> Decimal:
     return result
 
 
-def _validate_ohlc(
-    row: list[str], line_number: int, *, allow_negative: bool = False
-) -> None:
+def _validate_ohlc(row: list[str], line_number: int, *, allow_negative: bool = False) -> None:
     open_price = _decimal(row[1], "open")
     high = _decimal(row[2], "high")
     low = _decimal(row[3], "low")
@@ -245,8 +258,7 @@ def normalize_kline_archive(
     duplicates = 0
     gaps: list[Gap] = []
     missing_bars = 0
-    source_close_time_anomalies = 0
-    source_close_time_max_early_us = 0
+    canonicalization = CanonicalizationStats()
     first_open: int | None = None
     previous_open: int | None = None
     previous_fingerprint: tuple[str, ...] | None = None
@@ -255,13 +267,31 @@ def normalize_kline_archive(
     try:
         writer = csv.DictWriter(text, fieldnames=KLINE_OUTPUT_COLUMNS, lineterminator="\n")
         writer.writeheader()
-        for line_number, raw in enumerate(_archive_rows(archive), start=1):
-            rows_read += 1
-            if len(raw) < 12:
-                raise DataContractError(
-                    f"expected at least 12 columns at source row {line_number}, got {len(raw)}"
+
+        def validate_source_row(row: list[str], source_line_number: int) -> None:
+            _validate_ohlc(
+                row,
+                source_line_number,
+                allow_negative=ref.dataset == "premiumIndexKlines",
+            )
+            if ref.kind == "kline":
+                _validate_trade_fields(row, source_line_number)
+
+        def canonical_rows() -> Iterator[list[str]]:
+            try:
+                yield from canonicalize_kline_rows(
+                    _archive_rows(archive),
+                    duration_us=duration_us,
+                    kind=ref.kind,
+                    timestamp_to_us=timestamp_to_us,
+                    validate_row=validate_source_row,
+                    stats=canonicalization,
                 )
-            raw = [item.strip() for item in raw[:12]]
+            except SourceCanonicalizationError as exc:
+                raise DataContractError(str(exc)) from exc
+
+        for line_number, raw in enumerate(canonical_rows(), start=1):
+            rows_read += 1
             open_time_us = timestamp_to_us(raw[0])
             if not (requested_start_us <= open_time_us < requested_end_us):
                 continue
@@ -273,16 +303,9 @@ def normalize_kline_archive(
             close_exclusive_us = open_time_us + duration_us
             if not open_time_us <= source_close_us <= close_exclusive_us:
                 raise DataContractError(
-                    f"source close time is outside the declared interval at row {line_number}: "
+                    f"canonicalizer emitted an invalid close time at row {line_number}: "
                     f"open={open_time_us}, source_close={source_close_us}, "
                     f"close_exclusive={close_exclusive_us}"
-                )
-            close_delta = close_exclusive_us - source_close_us
-            if close_delta > 1_000:
-                source_close_time_anomalies += 1
-                source_close_time_max_early_us = max(
-                    source_close_time_max_early_us,
-                    close_delta,
                 )
             _validate_ohlc(
                 raw,
@@ -378,9 +401,9 @@ def normalize_kline_archive(
         source_sha256=source_hash,
         output_path=destination.as_posix(),
         output_sha256=output_hash,
-        rows_read=rows_read,
+        rows_read=canonicalization.source_rows_read,
         rows_written=rows_written,
-        exact_duplicates_removed=duplicates,
+        exact_duplicates_removed=(duplicates + canonicalization.exact_duplicates_removed),
         gap_count=len(gaps),
         missing_bar_count=missing_bars,
         first_open_time_us=first_open,
@@ -388,8 +411,20 @@ def normalize_kline_archive(
         requested_start=ref.period_start,
         requested_end=ref.period_end,
         gaps=tuple(gaps),
-        source_close_time_anomaly_count=source_close_time_anomalies,
-        source_close_time_max_early_us=source_close_time_max_early_us,
+        source_close_time_anomaly_count=(canonicalization.source_close_time_anomaly_count),
+        source_close_time_max_early_us=(canonicalization.source_close_time_max_early_us),
+        source_open_time_anomaly_count=(canonicalization.source_open_time_anomaly_count),
+        source_open_time_max_late_us=(canonicalization.source_open_time_max_late_us),
+        source_close_time_late_count=(canonicalization.source_close_time_late_count),
+        source_close_time_max_late_us=(canonicalization.source_close_time_max_late_us),
+        segmented_bar_count=canonicalization.segmented_bar_count,
+        segmented_source_rows_merged=(canonicalization.segmented_source_rows_merged),
+        quarantined_source_row_count=(canonicalization.quarantined_source_row_count),
+        quarantined_canonical_bar_count=(canonicalization.quarantined_canonical_bar_count),
+        anomaly_examples=tuple(canonicalization.anomaly_examples),
+        status=(
+            "valid_with_quarantine" if canonicalization.quarantined_canonical_bar_count else "valid"
+        ),
     )
     payload = asdict(report)
     quality_temporary = quality_destination.with_suffix(quality_destination.suffix + ".tmp")
@@ -442,7 +477,7 @@ def normalize_manifest(
                 Path(quality_root) / quality_relative,
                 expected_sha256=result.expected_sha256,
             )
-        except DataContractError as exc:
+        except (DataContractError, SourceCanonicalizationError) as exc:
             raise DataContractError(
                 f"{ref.dataset_name}/{ref.symbol}/{ref.period_start}: {exc}"
             ) from exc

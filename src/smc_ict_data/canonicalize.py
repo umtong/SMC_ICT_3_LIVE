@@ -121,9 +121,10 @@ def canonicalize_kline_rows(
     contained in one bucket and exactly contiguous are merged losslessly.
 
     A row that crosses a canonical boundary, has an impossible close timestamp,
-    starts after a missing bucket prefix, overlaps another segment, or has an
-    invalid payload quarantines the affected canonical bucket. It is never
-    clamped, shifted, price-filled or silently discarded.
+    starts after a missing bucket prefix, or overlaps another segment quarantines
+    the affected canonical bucket. It is never clamped, shifted, price-filled or
+    silently discarded. Price, OHLC and activity-field contract violations remain
+    hard errors rather than being converted into missing observations.
     """
 
     if duration_us <= 0:
@@ -167,8 +168,7 @@ def canonicalize_kline_rows(
         stats.source_rows_read += 1
         if len(raw_row) < 12:
             raise SourceCanonicalizationError(
-                f"expected at least 12 columns at source row {line_number}, "
-                f"got {len(raw_row)}"
+                f"expected at least 12 columns at source row {line_number}, got {len(raw_row)}"
             )
         row = [item.strip() for item in raw_row[:12]]
         fingerprint = tuple(row)
@@ -191,6 +191,9 @@ def canonicalize_kline_rows(
                 if fingerprint == previous_raw_fingerprint:
                     stats.exact_duplicates_removed += 1
                     continue
+                raise SourceCanonicalizationError(
+                    f"conflicting duplicate open time {open_time_us} at source row {line_number}"
+                )
 
         bucket_start_us = open_time_us - (open_time_us % duration_us)
         bucket_end_us = bucket_start_us + duration_us
@@ -246,9 +249,7 @@ def canonicalize_kline_rows(
         elif source_close_time_us > bucket_end_us:
             late_us = source_close_time_us - bucket_end_us
             stats.source_close_time_late_count += 1
-            stats.source_close_time_max_late_us = max(
-                stats.source_close_time_max_late_us, late_us
-            )
+            stats.source_close_time_max_late_us = max(stats.source_close_time_max_late_us, late_us)
             current.invalid_reasons.add("source_row_crosses_canonical_boundary")
             blocked_until_us = max(
                 blocked_until_us,
@@ -273,15 +274,9 @@ def canonicalize_kline_rows(
         try:
             validate_row(row, line_number)
         except ValueError as exc:
-            current.invalid_reasons.add("invalid_source_payload")
-            stats.record(
-                line_number=line_number,
-                reason="invalid_source_payload",
-                open_time_us=open_time_us,
-                source_close_time_us=source_close_time_us,
-                canonical_open_time_us=bucket_start_us,
-                details=str(exc),
-            )
+            raise SourceCanonicalizationError(
+                f"source payload contract violation at row {line_number}: {exc}"
+            ) from exc
 
         if len(current.segments) == 1:
             if open_time_us != bucket_start_us:
@@ -307,21 +302,6 @@ def canonicalize_kline_rows(
                 )
             elif open_time_us <= previous.source_close_time_us:
                 current.invalid_reasons.add("overlapping_source_segments")
-
-        if (
-            previous_raw_open_us == open_time_us
-            and previous_raw_fingerprint is not None
-            and fingerprint != previous_raw_fingerprint
-        ):
-            current.invalid_reasons.add("conflicting_duplicate_source_open")
-            stats.record(
-                line_number=line_number,
-                reason="conflicting_duplicate_source_open",
-                open_time_us=open_time_us,
-                source_close_time_us=source_close_time_us,
-                canonical_open_time_us=bucket_start_us,
-                details="same source open timestamp with different fields",
-            )
 
         previous_raw_open_us = open_time_us
         previous_raw_fingerprint = fingerprint

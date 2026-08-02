@@ -21,13 +21,15 @@ def test_golden_month_has_four_symbols_and_five_core_datasets() -> None:
     assert len(refs) == 20
     assert {item.symbol for item in refs} == {"BTCUSDT", "ETHUSDT", "XRPUSDT", "SOLUSDT"}
     assert {item.period for item in refs} == {"monthly"}
-    spot = next(item for item in refs if item.dataset_name == "spot_klines" and item.symbol == "BTCUSDT")
+    spot = next(
+        item for item in refs if item.dataset_name == "spot_klines" and item.symbol == "BTCUSDT"
+    )
     assert spot.url == (
-        "https://data.binance.vision/data/spot/monthly/klines/"
-        "BTCUSDT/1m/BTCUSDT-1m-2024-01.zip"
+        "https://data.binance.vision/data/spot/monthly/klines/BTCUSDT/1m/BTCUSDT-1m-2024-01.zip"
     )
     mark = next(
-        item for item in refs
+        item
+        for item in refs
         if item.dataset_name == "um_mark_price_klines" and item.symbol == "ETHUSDT"
     )
     assert mark.url == (

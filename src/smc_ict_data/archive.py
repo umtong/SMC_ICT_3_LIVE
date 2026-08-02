@@ -133,9 +133,7 @@ def _make_ref(
     period_end: date,
     label: str,
 ) -> ArchiveRef:
-    url, filename = _archive_url(
-        config.source_base_url, spec, symbol, interval, period, label
-    )
+    url, filename = _archive_url(config.source_base_url, spec, symbol, interval, period, label)
     relative = Path(
         config.exchange,
         spec.market_path,
@@ -324,7 +322,9 @@ def download_one(
         _fetch_to_path(ref.url, destination, retries, timeout)
         actual = file_sha256(destination)
         if actual != expected:
-            quarantine = destination.with_name(destination.name + f".checksum_mismatch.{actual[:12]}")
+            quarantine = destination.with_name(
+                destination.name + f".checksum_mismatch.{actual[:12]}"
+            )
             os.replace(destination, quarantine)
             return DownloadResult(
                 archive_id=ref.archive_id,

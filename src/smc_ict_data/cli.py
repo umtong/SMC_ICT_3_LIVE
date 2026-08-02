@@ -283,7 +283,9 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument("--out", type=Path, required=True)
     plan.set_defaults(handler=command_plan)
 
-    download = subparsers.add_parser("download", help="download and checksum-verify Bronze archives")
+    download = subparsers.add_parser(
+        "download", help="download and checksum-verify Bronze archives"
+    )
     download.add_argument("--manifest", type=Path, required=True)
     download.add_argument("--raw-root", type=Path, required=True)
     download.add_argument("--report", type=Path, required=True)

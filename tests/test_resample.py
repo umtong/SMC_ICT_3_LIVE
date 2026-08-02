@@ -17,10 +17,22 @@ def _make_archive(path: Path, count: int, missing_index: int | None = None) -> A
             continue
         open_ms = start + index * 60_000
         price = 100 + index
-        rows.append([
-            str(open_ms), str(price), str(price + 1), str(price - 1), str(price + 0.5),
-            "1", str(open_ms + 59_999), "100", "2", "0.4", "40", "0",
-        ])
+        rows.append(
+            [
+                str(open_ms),
+                str(price),
+                str(price + 1),
+                str(price - 1),
+                str(price + 0.5),
+                "1",
+                str(open_ms + 59_999),
+                "100",
+                "2",
+                "0.4",
+                "40",
+                "0",
+            ]
+        )
     csv_path = path.with_suffix(".csv")
     with csv_path.open("w", encoding="utf-8", newline="") as handle:
         csv.writer(handle, lineterminator="\n").writerows(rows)

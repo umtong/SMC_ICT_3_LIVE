@@ -27,20 +27,27 @@ available_time_us = close_time_exclusive_us = open_time_us + interval
 
 It is never inferred from `source_close_time_us`.
 
-Modern source objects normally place the source close one microsecond or one
-millisecond before the exclusive interval end. Some historical Binance Spot
-objects instead contain an earlier timestamp inside the same candle, consistent
-with a last-observed event timestamp. Such a value is source evidence, not a new
-bar boundary. The normalizer therefore:
+Modern source objects normally use one row per fixed interval. Some historical
+Binance Spot archives contain multiple contiguous trade rows inside one nominal
+minute, while a small number contain timestamps that cross or contradict the
+canonical boundary. The canonicalizer applies these rules before Silver output:
 
-1. requires `source_close_time_us` to remain inside the declared candle interval;
-2. preserves the value unchanged;
-3. keeps canonical completion and strategy availability at the interval end;
-4. reports the count and maximum early delta through
-   `source_close_time_anomaly_count` and `source_close_time_max_early_us`.
+1. a trade minute split into contiguous, wholly contained segments is merged
+   losslessly: first open, maximum high, minimum low, last close, and additive
+   volume/trade-count fields;
+2. source timestamps and archive hashes remain auditable in the quality report;
+3. a segment that crosses a minute, closes before it opens, overlaps another
+   segment, or lacks the aligned beginning of its minute quarantines the affected
+   canonical bucket;
+4. quarantined buckets become explicit missing observations. They are never
+   shifted, clamped, forward-filled, back-filled, or synthesized;
+5. canonical completion and legal strategy availability remain
+   `open_time_us + interval`, independent of source anomalies.
 
-A source close before the candle open or after the canonical interval end is a
-hard contract violation.
+Quality reports count merged segments, non-aligned source opens, early/late close
+times, quarantined rows and quarantined canonical buckets, with bounded source-line
+examples. Exact duplicate rows are audited and removed; a conflicting duplicate or
+non-monotonic source order remains a hard contract violation.
 
 ## Price and activity fields
 
@@ -56,8 +63,9 @@ reference-price klines. Original positions 5 and 7–11 remain in
 ## Required invariants
 
 - timestamps normalize to UTC integer microseconds;
-- open times are aligned to the declared fixed interval;
-- source rows are monotonically increasing;
+- emitted open times are aligned to the declared fixed interval;
+- source rows are monotonically increasing; historical contained segments are
+  canonicalized only under the explicit merge contract above;
 - `high >= max(open, low, close)`;
 - `low <= min(open, high, close)`;
 - prices and trade activity are finite and nonnegative, except signed premium

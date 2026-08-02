@@ -58,7 +58,7 @@ def read_download_statuses(path: Path) -> Counter[str]:
 
 def summarize_normalization_quality(root: Path) -> dict[str, int]:
     totals: Counter[str] = Counter()
-    maximum_early_us = 0
+    maxima: Counter[str] = Counter()
     report_count = 0
     for path in sorted(root.rglob("*.quality.json")):
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -69,17 +69,25 @@ def summarize_normalization_quality(root: Path) -> dict[str, int]:
             "exact_duplicates_removed",
             "gap_count",
             "missing_bar_count",
+            "source_open_time_anomaly_count",
             "source_close_time_anomaly_count",
+            "source_close_time_late_count",
+            "segmented_bar_count",
+            "segmented_source_rows_merged",
+            "quarantined_source_row_count",
+            "quarantined_canonical_bar_count",
         ):
             totals[field] += int(payload.get(field, 0))
-        maximum_early_us = max(
-            maximum_early_us,
-            int(payload.get("source_close_time_max_early_us", 0)),
-        )
+        for field in (
+            "source_open_time_max_late_us",
+            "source_close_time_max_early_us",
+            "source_close_time_max_late_us",
+        ):
+            maxima[field] = max(maxima[field], int(payload.get(field, 0)))
     return {
         "normalization_reports": report_count,
         **dict(sorted(totals.items())),
-        "source_close_time_max_early_us": maximum_early_us,
+        **dict(sorted(maxima.items())),
     }
 
 

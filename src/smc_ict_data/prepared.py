@@ -29,7 +29,10 @@ class PreparedRelease:
         payload = asdict(self)
         payload.pop("metadata")
         return {
-            **{key: value.as_posix() if isinstance(value, Path) else value for key, value in payload.items()},
+            **{
+                key: value.as_posix() if isinstance(value, Path) else value
+                for key, value in payload.items()
+            },
             "status": self.metadata.get("status", "unknown"),
             "period_utc": self.metadata.get("period_utc"),
             "symbols": self.metadata.get("symbols", []),

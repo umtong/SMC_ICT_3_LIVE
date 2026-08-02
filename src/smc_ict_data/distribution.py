@@ -48,7 +48,9 @@ class DistributionIndex:
 
 
 def _read_json_source(source: str | Path) -> dict[str, object]:
-    candidate = Path(source).expanduser() if not str(source).startswith(("http://", "https://")) else None
+    candidate = (
+        Path(source).expanduser() if not str(source).startswith(("http://", "https://")) else None
+    )
     if candidate is not None and candidate.is_file():
         return json.loads(candidate.read_text(encoding="utf-8"))
 
@@ -173,7 +175,9 @@ def _safe_extract(archive: Path, destination: Path) -> None:
         handle.extractall(destination)
 
 
-def _verify_partition(root: Path, expected_partition: str) -> tuple[list[dict[str, str]], dict[str, object]]:
+def _verify_partition(
+    root: Path, expected_partition: str
+) -> tuple[list[dict[str, str]], dict[str, object]]:
     metadata_path = root / "PARTITION.json"
     catalog_path = root / "catalog.csv"
     if not metadata_path.is_file() or not catalog_path.is_file():
@@ -247,7 +251,9 @@ def install_distribution(
     force: bool = False,
 ) -> dict[str, object]:
     index = load_distribution_index(index_source)
-    selected = [asset for asset in index.assets if partitions is None or asset.partition_id in partitions]
+    selected = [
+        asset for asset in index.assets if partitions is None or asset.partition_id in partitions
+    ]
     if not selected:
         raise ValueError("no distribution partitions selected")
     if partitions is not None:
@@ -255,8 +261,10 @@ def install_distribution(
         if unknown:
             raise ValueError(f"unknown distribution partitions: {unknown}")
 
-    suffix = "" if len(selected) == len(index.assets) else "__" + "-".join(
-        asset.partition_id for asset in selected
+    suffix = (
+        ""
+        if len(selected) == len(index.assets)
+        else "__" + "-".join(asset.partition_id for asset in selected)
     )
     installed_release_id = index.release_id + suffix
     base = Path(destination_base).expanduser().resolve()
@@ -312,7 +320,9 @@ def install_distribution(
         with catalog.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.DictWriter(handle, fieldnames=CATALOG_COLUMNS, lineterminator="\n")
             writer.writeheader()
-            writer.writerows(sorted([*all_rows, *extra_records], key=lambda row: str(row["relative_path"])))
+            writer.writerows(
+                sorted([*all_rows, *extra_records], key=lambda row: str(row["relative_path"]))
+            )
 
         totals = {
             "files": {

@@ -41,9 +41,7 @@ def _make_partition(tmp_path: Path) -> tuple[Path, dict[str, object]]:
     with catalog.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=CATALOG_COLUMNS, lineterminator="\n")
         writer.writeheader()
-        writer.writerows(
-            [_record(path, root) for path in (silver_file, gold_file, quality_file)]
-        )
+        writer.writerows([_record(path, root) for path in (silver_file, gold_file, quality_file)])
     (root / "catalog.csv.metadata.json").write_text("{}\n", encoding="utf-8")
 
     partition = {
