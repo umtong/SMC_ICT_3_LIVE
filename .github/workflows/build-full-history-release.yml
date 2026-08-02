@@ -12,7 +12,7 @@ permissions:
 
 concurrency:
   group: full-history-market-data-v1
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 env:
   RELEASE_ID: full-history-v1.0.0
@@ -157,7 +157,8 @@ jobs:
             --release-id "$RELEASE_ID" \
             --partition-id "$PARTITION" \
             --period-utc "$PERIOD" \
-            --repository-commit "$GITHUB_SHA"
+            --repository-commit "$GITHUB_SHA" \
+            --resample-workers 4
 
           (cd "$PARTITION_ROOT" && zip -q -r -0 "$ASSET" .)
 
@@ -186,6 +187,8 @@ jobs:
               "period_utc": metadata["period_utc"],
               "catalog_sha256": metadata["catalog_sha256"],
               "download_statuses": metadata["download_statuses"],
+              "pipeline_version": metadata["pipeline_version"],
+              "repository_commit": metadata["repository_commit"],
           }
           output = Path(os.environ["RUNNER_TEMP"]) / f"partition-index-{partition}.json"
           output.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -234,8 +237,20 @@ jobs:
           if actual != expected:
               raise SystemExit(f"partition index mismatch: expected={expected}, actual={actual}")
 
+          pipeline_versions = sorted({asset["pipeline_version"] for asset in assets})
+          repository_commits = sorted({asset["repository_commit"] for asset in assets})
+          if len(pipeline_versions) != 1:
+              raise SystemExit(f"mixed pipeline versions: {pipeline_versions}")
+          if repository_commits != [os.environ["GITHUB_SHA"]]:
+              raise SystemExit(
+                  f"partition commit mismatch: expected={os.environ['GITHUB_SHA']}, "
+                  f"actual={repository_commits}"
+              )
+
           index = {
               "schema_version": "1.0",
+              "pipeline_version": pipeline_versions[0],
+              "repository_commit": repository_commits[0],
               "release_id": os.environ["RELEASE_ID"],
               "tag": os.environ["RELEASE_TAG"],
               "repository": "umtong/SMC_ICT_3_LIVE",
@@ -310,4 +325,7 @@ jobs:
           print(sorted(names))
           PY
 
-          gh release edit "$RELEASE_TAG" --draft=false --latest=false
+          gh release edit "$RELEASE_TAG" \
+            --target "$GITHUB_SHA" \
+            --draft=false \
+            --latest=false
