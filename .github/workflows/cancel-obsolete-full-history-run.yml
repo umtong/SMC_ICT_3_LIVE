@@ -1,0 +1,25 @@
+name: cancel-obsolete-full-history-run
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/cancel-obsolete-full-history-run.yml
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  cancel:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      OBSOLETE_RUN_ID: "30730444339"
+    steps:
+      - name: Cancel obsolete publication run
+        run: |
+          set -euo pipefail
+          gh run cancel "$OBSOLETE_RUN_ID" --repo "$GITHUB_REPOSITORY" || true
+          gh run view "$OBSOLETE_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json databaseId,status,conclusion,url | jq .

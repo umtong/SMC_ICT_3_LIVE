@@ -1,0 +1,98 @@
+name: inspect-daily-kline-fallback
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/inspect-daily-kline-fallback.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download and summarize daily source files
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/daily && mkdir -p /tmp/daily
+          specs=(
+            ETHUSDT:2017-12-05
+            ETHUSDT:2018-02-09
+            SOLUSDT:2020-12-08
+            SOLUSDT:2021-12-24
+          )
+          for spec in "${specs[@]}"; do
+            symbol=${spec%%:*}
+            day=${spec##*:}
+            url="https://data.binance.vision/data/spot/daily/klines/$symbol/1m/$symbol-1m-$day.zip"
+            output="/tmp/daily/$symbol-$day.zip"
+            if curl --fail --location --silent --show-error "$url" --output "$output"; then
+              echo "downloaded $url"
+            else
+              echo "missing $url"
+              rm -f "$output"
+            fi
+          done
+
+          python - <<'PY'
+          from decimal import Decimal
+          from pathlib import Path
+          import csv
+          import io
+          import json
+          import zipfile
+
+          minute = 60_000
+          reports = []
+          for path in sorted(Path('/tmp/daily').glob('*.zip')):
+              with zipfile.ZipFile(path) as archive:
+                  name = next(name for name in archive.namelist() if name.endswith('.csv'))
+                  with archive.open(name) as raw:
+                      rows = list(csv.reader(io.TextIOWrapper(raw, encoding='utf-8-sig', newline='')))
+              if rows:
+                  try:
+                      int(rows[0][0])
+                  except ValueError:
+                      rows = rows[1:]
+              report = {
+                  'file': path.name,
+                  'rows': len(rows),
+                  'off_grid': 0,
+                  'off_grid_nonzero': 0,
+                  'close_before_open': 0,
+                  'close_after_end': 0,
+                  'max_late_ms': 0,
+                  'samples': [],
+              }
+              for number, row in enumerate(rows, start=1):
+                  open_ms = int(row[0])
+                  close_ms = int(row[6])
+                  zero = Decimal(row[5]) == 0 and Decimal(row[7]) == 0 and int(row[8]) == 0
+                  kinds = []
+                  if open_ms % minute:
+                      report['off_grid'] += 1
+                      report['off_grid_nonzero'] += int(not zero)
+                      kinds.append('off_grid')
+                  if close_ms < open_ms:
+                      report['close_before_open'] += 1
+                      kinds.append('close_before_open')
+                  if close_ms > open_ms + minute:
+                      report['close_after_end'] += 1
+                      report['max_late_ms'] = max(report['max_late_ms'], close_ms - open_ms - minute)
+                      kinds.append('close_after_end')
+                  if kinds and len(report['samples']) < 8:
+                      report['samples'].append({
+                          'row': number,
+                          'kinds': kinds,
+                          'open': open_ms,
+                          'close': close_ms,
+                          'zero_activity': zero,
+                          'ohlc': row[1:5],
+                          'volume': row[5],
+                          'trade_count': row[8],
+                      })
+              reports.append(report)
+          print(json.dumps(reports, indent=2, sort_keys=True))
+          PY

@@ -1,0 +1,52 @@
+name: snapshot-full-history-release
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/snapshot-full-history-release.yml
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Print finalizer, publication and release state
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "snapshot=after-finalizer-syntax-repair"
+          for workflow in \
+            finalize-full-history-pipeline.yml \
+            build-full-history-release.yml \
+            verify-published-distribution.yml; do
+            echo "===== $workflow ====="
+            payload=$(gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow "$workflow" \
+              --branch main \
+              --limit 3 \
+              --json databaseId,status,conclusion,headSha,url,createdAt,event)
+            echo "$payload" | jq .
+            if [[ "$(jq length <<<"$payload")" -gt 0 ]]; then
+              run_id=$(jq -r '.[0].databaseId' <<<"$payload")
+              gh run view "$run_id" \
+                --repo "$GITHUB_REPOSITORY" \
+                --json databaseId,status,conclusion,url,jobs | jq .
+            fi
+          done
+
+          echo "===== GitHub Release ====="
+          if gh release view market-data-full-history-v1.0.0 \
+            --repo "$GITHUB_REPOSITORY" \
+            --json tagName,isDraft,targetCommitish,url,assets > "$RUNNER_TEMP/release.json" 2>/dev/null; then
+            jq '{tagName,isDraft,targetCommitish,url,assets:[.assets[]|{name,size,digest}]}' \
+              "$RUNNER_TEMP/release.json"
+          else
+            echo '{"status":"release_not_found"}'
+          fi
