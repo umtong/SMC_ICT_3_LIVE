@@ -1,0 +1,34 @@
+{
+  "release_id": "full-history-v1.0.0",
+  "tag": "market-data-full-history-v1.0.0",
+  "index_url": "https://github.com/umtong/SMC_ICT_3_LIVE/releases/download/market-data-full-history-v1.0.0/full-history-v1.0.0.index.json",
+  "period_utc": "[2017-01-01, 2026-08-01)",
+  "partitions": [
+    "2017",
+    "2018",
+    "2019",
+    "2020",
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025",
+    "2026"
+  ],
+  "symbols": [
+    "BTCUSDT",
+    "ETHUSDT",
+    "XRPUSDT",
+    "SOLUSDT"
+  ],
+  "base_interval": "1m",
+  "derived_intervals": [
+    "5m",
+    "15m",
+    "1h",
+    "4h"
+  ],
+  "installation_command": "smc-data install",
+  "google_drive_required": false,
+  "exchange_download_required_for_researchers": false
+}
