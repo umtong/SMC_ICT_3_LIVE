@@ -11,6 +11,7 @@ import sys
 
 from .archive import download_manifest, plan_archives, write_manifest
 from .catalog import build_catalog
+from .distribution import DEFAULT_INDEX_URL, install_distribution, load_distribution_index
 from .model import load_config, parse_date, resolve_history_end
 from .normalization import normalize_manifest
 from .prepared import load_prepared_release, verify_prepared_release
@@ -146,6 +147,46 @@ def command_catalog(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_distribution(args: argparse.Namespace) -> int:
+    index = load_distribution_index(args.index)
+    _emit(
+        {
+            "status": "available",
+            "release_id": index.release_id,
+            "tag": index.tag,
+            "repository": index.repository,
+            "period_utc": index.period_utc,
+            "symbols": list(index.symbols),
+            "timeframes": list(index.timeframes),
+            "assets": [
+                {
+                    "partition_id": asset.partition_id,
+                    "file": asset.file,
+                    "bytes": asset.bytes,
+                    "sha256": asset.sha256,
+                    "files": asset.files,
+                    "rows": asset.rows,
+                }
+                for asset in index.assets
+            ],
+        }
+    )
+    return 0
+
+
+def command_install(args: argparse.Namespace) -> int:
+    payload = install_distribution(
+        index_source=args.index,
+        destination_base=args.destination_base,
+        cache_root=args.cache_root,
+        partitions=set(args.year) if args.year else None,
+        workers=args.workers,
+        force=args.force,
+    )
+    _emit(payload)
+    return 0
+
+
 def command_ready(args: argparse.Namespace) -> int:
     prepared = load_prepared_release(args.root)
     payload = prepared.summary()
@@ -186,7 +227,7 @@ def command_doctor(args: argparse.Namespace) -> int:
             "enabled_datasets": [item.name for item in config.enabled_datasets],
             "prepared_research_data": prepared_status,
             "optional_packages": optional,
-            "note": "the default research dataset is committed in Git; network acquisition is for provenance audits and new releases only",
+            "note": "GitHub distributions and committed data are the research path; upstream acquisition is for release maintainers only",
         }
     )
     return 0
@@ -199,14 +240,36 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    distribution = subparsers.add_parser(
+        "distribution", help="inspect the prebuilt full-history GitHub distribution"
+    )
+    distribution.add_argument("--index", default=DEFAULT_INDEX_URL)
+    distribution.set_defaults(handler=command_distribution)
+
+    install = subparsers.add_parser(
+        "install",
+        help="install the prebuilt full-history distribution from GitHub Releases",
+    )
+    install.add_argument("--index", default=DEFAULT_INDEX_URL)
+    install.add_argument("--destination-base", type=Path, default=Path("data/installed"))
+    install.add_argument("--cache-root", type=Path)
+    install.add_argument(
+        "--year",
+        action="append",
+        help="install one partition year; repeat for multiple years; defaults to all",
+    )
+    install.add_argument("--workers", type=int, default=3)
+    install.add_argument("--force", action="store_true")
+    install.set_defaults(handler=command_install)
+
     ready = subparsers.add_parser(
         "ready",
-        help="locate and optionally checksum-verify the research-ready dataset committed in Git",
+        help="locate and optionally checksum-verify the active research dataset",
     )
     ready.add_argument(
         "--root",
         type=Path,
-        help="data/prepared or a specific prepared release; defaults to the current checkout",
+        help="data/installed, data/prepared or a release root; defaults to installed then bundled",
     )
     ready.add_argument("--verify", action="store_true", help="verify every cataloged file")
     ready.set_defaults(handler=command_ready)
@@ -267,7 +330,7 @@ def build_parser() -> argparse.ArgumentParser:
     doctor.add_argument(
         "--prepared-root",
         type=Path,
-        help="override data/prepared location for the readiness check",
+        help="override installed/prepared location for the readiness check",
     )
     doctor.set_defaults(handler=command_doctor)
     return parser
@@ -278,7 +341,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         return int(args.handler(args))
-    except (OSError, ValueError) as exc:
+    except (OSError, RuntimeError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
