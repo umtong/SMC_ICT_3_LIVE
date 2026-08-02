@@ -1,0 +1,25 @@
+name: restart-full-history-release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/restart-full-history-release.yml
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Dispatch the full-history publication workflow on current main
+        run: |
+          set -euo pipefail
+          gh workflow run build-full-history-release.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
