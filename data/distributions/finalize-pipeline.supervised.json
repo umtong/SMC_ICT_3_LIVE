@@ -1,0 +1,110 @@
+{
+  "component": "full-history-pipeline-finalizer",
+  "conclusion": "failure",
+  "createdAt": "2026-08-02T04:49:43Z",
+  "databaseId": 30733039982,
+  "event": "workflow_dispatch",
+  "headBranch": "main",
+  "headSha": "42b70e38ad27da9adf987e535a5a861bcc94b3e9",
+  "jobs": [
+    {
+      "completedAt": "2026-08-02T04:50:04Z",
+      "conclusion": "failure",
+      "databaseId": 91456613862,
+      "name": "validate-and-publish",
+      "startedAt": "2026-08-02T04:49:53Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-08-02T04:49:54Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-08-02T04:49:53Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-08-02T04:49:56Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4",
+          "number": 2,
+          "startedAt": "2026-08-02T04:49:54Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-08-02T04:49:57Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-python@v5",
+          "number": 3,
+          "startedAt": "2026-08-02T04:49:56Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-08-02T04:49:57Z",
+          "conclusion": "success",
+          "name": "Apply the reviewed deterministic patch",
+          "number": 4,
+          "startedAt": "2026-08-02T04:49:57Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-08-02T04:49:57Z",
+          "conclusion": "success",
+          "name": "Load the repository-local materializer explicitly in its test",
+          "number": 5,
+          "startedAt": "2026-08-02T04:49:57Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-08-02T04:50:01Z",
+          "conclusion": "success",
+          "name": "Format, lint, test and compile",
+          "number": 6,
+          "startedAt": "2026-08-02T04:49:57Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-08-02T04:50:02Z",
+          "conclusion": "failure",
+          "name": "Publish the validated pipeline",
+          "number": 7,
+          "startedAt": "2026-08-02T04:50:01Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-08-02T04:50:02Z",
+          "conclusion": "skipped",
+          "name": "Post Run actions/setup-python@v5",
+          "number": 13,
+          "startedAt": "2026-08-02T04:50:02Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-08-02T04:50:03Z",
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4",
+          "number": 14,
+          "startedAt": "2026-08-02T04:50:02Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-08-02T04:50:03Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 15,
+          "startedAt": "2026-08-02T04:50:03Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/umtong/SMC_ICT_3_LIVE/actions/runs/30733039982/job/91456613862"
+    }
+  ],
+  "name": "finalize-full-history-publication-pipeline",
+  "observed_at_utc": "2026-08-02T04:52:54.893839+00:00",
+  "schema_version": "1.0",
+  "status": "completed",
+  "updatedAt": "2026-08-02T04:50:04Z",
+  "url": "https://github.com/umtong/SMC_ICT_3_LIVE/actions/runs/30733039982",
+  "watch_exit_status": 1,
+  "workflowName": "finalize-full-history-publication-pipeline"
+}
