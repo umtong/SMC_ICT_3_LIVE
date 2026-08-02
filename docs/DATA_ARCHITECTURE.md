@@ -31,31 +31,48 @@ ordinary spreadsheet:
   Quarantine and never leak into research queries.
 - **Slowly changing dimensions:** future instrument metadata (tick size,
   contract size, status, fee tier) must be effective-dated, not overwritten.
-- **Data contracts:** schemas and CI tests are versioned with code and golden
-  manifests.
+- **Data contracts:** schemas and CI tests are versioned with code and prepared
+  release catalogs.
+
+## Default research surface
+
+A validated, bounded Silver/Gold release is committed under `data/prepared`.
+It is the default input for all researchers and is available immediately after
+cloning `main`. No Drive mount, exchange API call, archive download or data-vendor
+selection is part of the normal research bootstrap.
+
+`data/prepared/CURRENT` selects one immutable release. The release contains a
+machine-readable metadata contract and a SHA-256 catalog. CI verifies the
+catalog and every tracked data file.
 
 ## Storage responsibilities
 
 ### GitHub
 
-Small, reviewable and executable artifacts only:
+The repository is the single research entrypoint and contains:
 
-- collectors and normalizers;
-- configuration and schemas;
-- source/candidate manifests;
-- quality-contract tests;
-- SQL views and documentation;
-- workflow definitions and release metadata templates.
+- collectors, normalizers and deterministic resamplers;
+- configuration, schemas, tests and workflows;
+- source/candidate manifests and release metadata;
+- a versioned research-ready Silver/Gold release;
+- its quality reports and content catalog;
+- SQL views and documentation.
+
+The committed release is deliberately bounded so cloning remains practical.
+Additional periods are published as explicit, reviewed data-version changes;
+they are not silently fetched during a strategy run.
 
 ### Google Drive
 
-Bulk and release artifacts:
+Drive is optional durable archive and backup storage for:
 
 - exact raw archives and companion checksums;
-- normalized Silver partitions;
-- derived Gold partitions;
-- quality reports and catalogs;
-- immutable release bundles.
+- historical release bundles;
+- superseded or larger data artifacts.
+
+Drive is not an execution environment and is not required to locate, initialize
+or run the default research dataset. Code must not assume any Drive folder
+outside `Project/SMC_ICT_3_LIVE`.
 
 ## Partition contract
 
@@ -68,14 +85,20 @@ The physical hierarchy follows source semantics:
 Examples:
 
 ```text
-binance/spot/klines/BTCUSDT/1m/2024/01/BTCUSDT-1m-2024-01.zip
-binance/futures/um/markPriceKlines/ETHUSDT/1m/2024/01/ETHUSDT-1m-2024-01.csv.gz
+data/prepared/<release>/silver/binance/spot/klines/BTCUSDT/1m/2024/01/BTCUSDT-1m-2024-01.csv.gz
+data/prepared/<release>/gold/binance/futures/um/markPriceKlines/ETHUSDT/15m/2024/01/ETHUSDT-15m-2024-01.csv.gz
 ```
 
 Monthly partitions avoid tiny-file proliferation while still permitting
-bounded replay. Daily source objects are used for the not-yet-published month;
-a later release may compact them only after the official monthly object is
-published and reconciled.
+bounded replay. Daily source objects may be used while constructing a future
+release, but researchers consume only the reviewed release output.
+
+## Acquisition boundary
+
+Official downloads and Bronze materialization remain available for maintainers
+who create a new release or audit provenance. They do not run on every pull
+request and are not a prerequisite for strategy work. The default CI path reads
+and verifies the committed prepared release without external market-data I/O.
 
 ## Neutrality boundary
 
