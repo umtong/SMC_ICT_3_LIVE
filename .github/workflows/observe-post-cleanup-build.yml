@@ -1,3 +1,4 @@
+# One-shot observer; remove after recording the matching build run.
 name: observe-post-cleanup-full-history-build
 
 on:
