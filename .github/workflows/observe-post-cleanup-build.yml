@@ -35,10 +35,21 @@ jobs:
             --branch main \
             --limit 20 \
             --json databaseId,name,workflowName,event,status,conclusion,headSha,headBranch,createdAt,updatedAt,url \
-            --jq --arg target "$TARGET_SHA" '[.[] | select(.headSha == $target)]' \
-            > "$RUNNER_TEMP/observation.json"
+            > "$RUNNER_TEMP/runs.json"
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          import os
+
+          runs = json.loads(
+              (Path(os.environ["RUNNER_TEMP"]) / "runs.json").read_text(encoding="utf-8")
+          )
+          matches = [run for run in runs if run.get("headSha") == os.environ["TARGET_SHA"]]
+          output = Path(os.environ["RUNNER_TEMP"]) / "observation.json"
+          output.write_text(json.dumps(matches, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(json.dumps(matches, indent=2, sort_keys=True))
+          PY
           test -s "$RUNNER_TEMP/observation.json"
-          cat "$RUNNER_TEMP/observation.json"
       - name: Commit observation
         run: |
           set -euo pipefail
