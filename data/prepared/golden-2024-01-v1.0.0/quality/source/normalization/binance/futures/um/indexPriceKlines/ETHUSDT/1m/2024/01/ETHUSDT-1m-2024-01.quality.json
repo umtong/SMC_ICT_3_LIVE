@@ -1,0 +1,22 @@
+{
+  "archive_id": "07a922590438d59ff6d6",
+  "dataset": "indexPriceKlines",
+  "exact_duplicates_removed": 0,
+  "first_open_time_us": 1704067200000000,
+  "gap_count": 0,
+  "gaps": [],
+  "interval": "1m",
+  "last_open_time_us": 1706745540000000,
+  "missing_bar_count": 0,
+  "output_path": "/home/runner/work/_temp/golden-source/02_NORMALIZED_SILVER/binance/futures/um/indexPriceKlines/ETHUSDT/1m/2024/01/ETHUSDT-1m-2024-01.csv.gz",
+  "output_sha256": "4e979faf228db441825b92a95f7b2f45efcf011548be9558156c6ecafbae702f",
+  "pipeline_version": "1.0.0",
+  "requested_end": "2024-01-31",
+  "requested_start": "2024-01-01",
+  "rows_read": 44640,
+  "rows_written": 44640,
+  "source_sha256": "05747d6d3800af0be45900a847c5de538a1d0b776327806a88c0b1f55f22c940",
+  "source_url": "https://data.binance.vision/data/futures/um/monthly/indexPriceKlines/ETHUSDT/1m/ETHUSDT-1m-2024-01.zip",
+  "status": "valid",
+  "symbol": "ETHUSDT"
+}

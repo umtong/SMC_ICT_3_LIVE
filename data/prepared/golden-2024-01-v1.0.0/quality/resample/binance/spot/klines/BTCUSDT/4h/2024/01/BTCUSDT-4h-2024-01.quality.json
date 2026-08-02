@@ -1,0 +1,13 @@
+{
+  "incomplete_buckets_dropped": 0,
+  "input_path": "data/prepared/golden-2024-01-v1.0.0/silver/binance/spot/klines/BTCUSDT/1m/2024/01/BTCUSDT-1m-2024-01.csv.gz",
+  "input_sha256": "184b74a53b5515f0495fa43a1a4087f609e8e75061f20e8f3ac79a0e495f71ff",
+  "output_path": "data/prepared/golden-2024-01-v1.0.0/gold/binance/spot/klines/BTCUSDT/4h/2024/01/BTCUSDT-4h-2024-01.csv.gz",
+  "output_rows": 186,
+  "output_sha256": "6ce42cdddc1af1ccd08ef1ac765cafa0fd4b1d1c5367908c8e31e518f938a93b",
+  "pipeline_version": "1.0.0",
+  "source_interval": "1m",
+  "source_rows": 44640,
+  "status": "valid",
+  "target_interval": "4h"
+}

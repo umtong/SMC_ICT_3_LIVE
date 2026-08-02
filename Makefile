@@ -1,6 +1,19 @@
 PYTHON ?= python3
+VENV_PYTHON ?= .venv/bin/python
+VENV_SMC_DATA ?= .venv/bin/smc-data
 
-.PHONY: test lint plan-golden plan-history package
+.PHONY: setup ready verify-prepared test lint plan-golden plan-history package
+
+setup:
+	$(PYTHON) -m venv .venv
+	$(VENV_PYTHON) -m pip install -e .
+	$(VENV_SMC_DATA) ready --verify
+
+ready:
+	PYTHONPATH=src $(PYTHON) -m smc_ict_data.cli ready
+
+verify-prepared:
+	PYTHONPATH=src $(PYTHON) -m smc_ict_data.cli ready --verify
 
 test:
 	PYTHONPATH=src $(PYTHON) -m pytest

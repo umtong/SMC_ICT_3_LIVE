@@ -1,11 +1,24 @@
 # Data in Git
 
-Only small manifests and documentation belong here. Bulk ZIP, CSV.gz, Parquet,
-DuckDB and quality trees are ignored by Git and published to the project Google
-Drive as immutable releases.
+This directory contains both reproducibility metadata and the validated default
+research release.
 
-- `manifests/golden_2024_01.csv`: deterministic CI and release seed
-- `manifests/full_history_candidates_2026-08-02.sha256`: hash and row-count contract for the full candidate CSV distributed in Drive. Regenerate it with the README command.
+- `prepared/CURRENT`: selected default release ID
+- `prepared/<release-id>/silver`: normalized 1-minute research data
+- `prepared/<release-id>/gold`: deterministic 5m, 15m, 1h and 4h data
+- `prepared/<release-id>/quality`: source and resampling quality evidence
+- `prepared/<release-id>/catalog.csv`: file size, SHA-256 and row-range catalog
+- `manifests/golden_2024_01.csv`: deterministic provenance/audit seed
+- `manifests/full_history_candidates_2026-08-02.sha256`: contract for the separately generated full candidate manifest
 
-A candidate row is not a claim that the object exists. `download_report.jsonl`
-is the authoritative source-availability result for a release.
+Researchers use `prepared`; they do not need to download market data or locate a
+Drive folder. Run the following from the repository root:
+
+```bash
+PYTHONPATH=src python3 -m smc_ict_data.cli ready --verify
+```
+
+Local acquisition workspaces such as `data/raw`, `data/silver`, `data/gold` and
+`data/quality` remain ignored. A candidate manifest row is not a claim that an
+upstream object exists; availability is established only while a maintainer
+constructs or audits a release.

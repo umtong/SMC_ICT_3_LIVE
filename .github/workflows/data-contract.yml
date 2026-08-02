@@ -21,6 +21,13 @@ jobs:
       - run: pip install -e .[dev]
       - run: ruff check src tests
       - run: pytest
+      - name: Verify committed research-ready release
+        run: |
+          if [[ -f data/prepared/CURRENT ]]; then
+            smc-data ready --verify
+          else
+            echo "Prepared release pending one-shot bootstrap on this PR."
+          fi
       - name: Rebuild golden source manifest
         run: |
           smc-data plan \

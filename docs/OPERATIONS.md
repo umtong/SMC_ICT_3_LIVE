@@ -1,5 +1,20 @@
 # Operations and release runbook
 
+## Researcher path
+
+Normal research does not execute this acquisition runbook. Researchers use the
+release selected by `data/prepared/CURRENT` and verify it locally:
+
+```bash
+PYTHONPATH=src python3 -m smc_ict_data.cli ready --verify
+```
+
+That release is committed in Git with Silver, Gold, quality reports and a
+content catalog. Drive and upstream exchange downloads are not runtime
+dependencies.
+
+The remaining sections are for maintainers creating or auditing a data release.
+
 ## 1. Plan
 
 Create a candidate manifest from an explicit historical interval and knowledge
@@ -26,20 +41,24 @@ incomplete buckets. Session/calendar views are derived, not embedded in Silver.
 
 ## 5. Catalog and publish
 
-Hash every release file and write a catalog. Publish under an immutable version,
-for example:
+Hash every release file and write a catalog. A reviewed, bounded default release
+is committed under:
 
 ```text
-05_RELEASES/market-data/v1.0.0/golden-2024-01/
-05_RELEASES/market-data/v1.1.0/full-history-2026-07/
+data/prepared/<release-id>/
 ```
 
+Update `data/prepared/CURRENT` in the same pull request. CI must verify every
+cataloged file before merge. Google Drive may receive an immutable backup bundle
+under `Project/SMC_ICT_3_LIVE`, but that backup is not the researcher entrypoint.
+
 A release contains source manifest, download report, quality reports, catalog,
-release metadata and data files or a content-addressed reference to them.
+release metadata and research-ready Silver/Gold files. Bronze may remain in the
+archive when it is unnecessary for normal strategy work.
 
 ## 6. Detect upstream revisions
 
-Binance may replace archived objects. A scheduled audit re-fetches checksum
+Binance may replace archived objects. A provenance audit re-fetches checksum
 files and compares them with the pinned release. A changed source never mutates
 an old release. Instead:
 
@@ -47,15 +66,19 @@ an old release. Instead:
 2. acquire the replacement into a new Bronze release;
 3. rerun normalization and quality comparison;
 4. explain row-level impact;
-5. publish a new data version.
+5. publish a new data version through review.
+
+The `audit-golden-source-reproducibility` workflow is explicit/manual and is not
+run on every strategy pull request.
 
 ## Incremental cadence
 
-- Daily: acquire the latest complete UTC day, validate and append a provisional
-  daily release.
-- Monthly: after the first Monday, acquire the official monthly object and
-  reconcile it with provisional daily objects.
-- Quarterly: revalidate historical checksums and instrument metadata.
+- As needed: acquire the latest complete UTC period for a candidate release.
+- Before publication: reconcile daily candidates with official monthly objects.
+- At audit points: revalidate historical checksums and instrument metadata.
+
+No cadence silently changes `data/prepared/CURRENT`. Publication always requires
+an explicit release commit and review.
 
 ## Recovery
 

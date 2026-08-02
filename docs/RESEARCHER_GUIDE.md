@@ -1,5 +1,20 @@
 # Researcher guide
 
+## Start from the prepared release
+
+The repository already contains the validated default market-data release.
+Do not begin a strategy task by searching Google Drive, choosing another data
+vendor, or downloading Binance archives again.
+
+```bash
+PYTHONPATH=src python3 -m smc_ict_data.cli ready --verify
+```
+
+`data/prepared/CURRENT` identifies the default release. Use the returned
+`silver_root` for 1-minute source facts and `gold_root` for the committed 5m,
+15m, 1h and 4h derivatives. Upstream acquisition commands are for data-release
+maintainers and provenance audits, not the normal research path.
+
 ## Pin inputs
 
 Every experiment records:

@@ -1,0 +1,13 @@
+{
+  "incomplete_buckets_dropped": 0,
+  "input_path": "data/prepared/golden-2024-01-v1.0.0/silver/binance/futures/um/markPriceKlines/XRPUSDT/1m/2024/01/XRPUSDT-1m-2024-01.csv.gz",
+  "input_sha256": "f6d7fe07e8d3f96ad85a06cbfe44cd9d1e05a642f223804d361d2722e077e09d",
+  "output_path": "data/prepared/golden-2024-01-v1.0.0/gold/binance/futures/um/markPriceKlines/XRPUSDT/4h/2024/01/XRPUSDT-4h-2024-01.csv.gz",
+  "output_rows": 186,
+  "output_sha256": "f63a21a95a935a6a4e56e272333001afda763f84e883021904ef66d10d77ef98",
+  "pipeline_version": "1.0.0",
+  "source_interval": "1m",
+  "source_rows": 44640,
+  "status": "valid",
+  "target_interval": "4h"
+}

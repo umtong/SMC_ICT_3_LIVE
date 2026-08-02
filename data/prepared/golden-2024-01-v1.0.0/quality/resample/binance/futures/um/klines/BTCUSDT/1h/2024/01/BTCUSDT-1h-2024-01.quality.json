@@ -1,0 +1,13 @@
+{
+  "incomplete_buckets_dropped": 0,
+  "input_path": "data/prepared/golden-2024-01-v1.0.0/silver/binance/futures/um/klines/BTCUSDT/1m/2024/01/BTCUSDT-1m-2024-01.csv.gz",
+  "input_sha256": "07e0a57945a63a12cb822c1ce077abe89d86eb65c65c06e4719946e024d543e3",
+  "output_path": "data/prepared/golden-2024-01-v1.0.0/gold/binance/futures/um/klines/BTCUSDT/1h/2024/01/BTCUSDT-1h-2024-01.csv.gz",
+  "output_rows": 744,
+  "output_sha256": "759bd38e14cfd671caa58f39afa0b87d5dd4942997a7540e17579ac8460d4906",
+  "pipeline_version": "1.0.0",
+  "source_interval": "1m",
+  "source_rows": 44640,
+  "status": "valid",
+  "target_interval": "1h"
+}

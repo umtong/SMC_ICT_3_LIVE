@@ -1,0 +1,22 @@
+{
+  "archive_id": "e139584ac537ab4086fa",
+  "dataset": "markPriceKlines",
+  "exact_duplicates_removed": 0,
+  "first_open_time_us": 1704067200000000,
+  "gap_count": 0,
+  "gaps": [],
+  "interval": "1m",
+  "last_open_time_us": 1706745540000000,
+  "missing_bar_count": 0,
+  "output_path": "/home/runner/work/_temp/golden-source/02_NORMALIZED_SILVER/binance/futures/um/markPriceKlines/XRPUSDT/1m/2024/01/XRPUSDT-1m-2024-01.csv.gz",
+  "output_sha256": "f6d7fe07e8d3f96ad85a06cbfe44cd9d1e05a642f223804d361d2722e077e09d",
+  "pipeline_version": "1.0.0",
+  "requested_end": "2024-01-31",
+  "requested_start": "2024-01-01",
+  "rows_read": 44640,
+  "rows_written": 44640,
+  "source_sha256": "61201c1c65589c45173caf3a8b279778a7a28974f24b98d47ab4b10579ae780b",
+  "source_url": "https://data.binance.vision/data/futures/um/monthly/markPriceKlines/XRPUSDT/1m/XRPUSDT-1m-2024-01.zip",
+  "status": "valid",
+  "symbol": "XRPUSDT"
+}

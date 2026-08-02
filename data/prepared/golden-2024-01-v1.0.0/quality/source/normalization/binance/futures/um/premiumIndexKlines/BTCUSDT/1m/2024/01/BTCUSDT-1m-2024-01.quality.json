@@ -1,0 +1,22 @@
+{
+  "archive_id": "42bdc948bd4b88fa27ae",
+  "dataset": "premiumIndexKlines",
+  "exact_duplicates_removed": 0,
+  "first_open_time_us": 1704067200000000,
+  "gap_count": 0,
+  "gaps": [],
+  "interval": "1m",
+  "last_open_time_us": 1706745540000000,
+  "missing_bar_count": 0,
+  "output_path": "/home/runner/work/_temp/golden-source/02_NORMALIZED_SILVER/binance/futures/um/premiumIndexKlines/BTCUSDT/1m/2024/01/BTCUSDT-1m-2024-01.csv.gz",
+  "output_sha256": "d1e894d662ed9a6e5f4960631d0bc63cfa98514ed5ed086cd9559b7122b8d38a",
+  "pipeline_version": "1.0.0",
+  "requested_end": "2024-01-31",
+  "requested_start": "2024-01-01",
+  "rows_read": 44640,
+  "rows_written": 44640,
+  "source_sha256": "e799edfbb6c25ef363613e9f70555c75514fbc01c90afc9546dc17419d9eba9a",
+  "source_url": "https://data.binance.vision/data/futures/um/monthly/premiumIndexKlines/BTCUSDT/1m/BTCUSDT-1m-2024-01.zip",
+  "status": "valid",
+  "symbol": "BTCUSDT"
+}
