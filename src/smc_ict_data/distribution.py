@@ -264,7 +264,7 @@ def install_distribution(
     if destination.exists() and not force:
         prepared = load_prepared_release(destination)
         verification = verify_prepared_release(prepared)
-        return {"status": "already_installed", **prepared.summary(), "verification": verification}
+        return {**prepared.summary(), "status": "already_installed", "verification": verification}
 
     cache = (
         Path(cache_root).expanduser().resolve()
@@ -364,4 +364,4 @@ def install_distribution(
 
     prepared = load_prepared_release(base)
     verification = verify_prepared_release(prepared)
-    return {"status": "installed", **prepared.summary(), "verification": verification}
+    return {**prepared.summary(), "status": "installed", "verification": verification}
