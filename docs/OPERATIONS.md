@@ -2,86 +2,111 @@
 
 ## Researcher path
 
-Normal research does not execute this acquisition runbook. Researchers use the
-release selected by `data/prepared/CURRENT` and verify it locally:
+Normal research does not execute the acquisition runbook.
 
 ```bash
-PYTHONPATH=src python3 -m smc_ict_data.cli ready --verify
+make setup-full
+smc-data ready --verify
 ```
 
-That release is committed in Git with Silver, Gold, quality reports and a
-content catalog. Drive and upstream exchange downloads are not runtime
-dependencies.
+This installs project-produced GitHub Release assets into `data/installed` and
+verifies every file. It does not use Google Drive or download exchange archives.
+The bundled `data/prepared` golden release remains available for immediate,
+network-free contract work.
 
-The remaining sections are for maintainers creating or auditing a data release.
+The remaining sections are for data-release maintainers.
 
 ## 1. Plan
 
-Create a candidate manifest from an explicit historical interval and knowledge
-date. Keep `as_of` in release metadata; it explains why the most recent month is
-represented by daily rather than monthly objects.
+Create candidate manifests from explicit historical intervals and a knowledge
+date. Keep `as_of` in release metadata; it explains why a recent month may use
+daily rather than monthly source objects.
+
+The v1 full-history distribution is partitioned by UTC calendar year from
+2017-01-01 through 2026-07-31. A candidate URL does not assert that a symbol or
+dataset existed; source 404s are recorded as `source_unavailable`.
 
 ## 2. Acquire Bronze
 
 Download the companion `.CHECKSUM` first, then the ZIP. An existing file is
-trusted only after a fresh local SHA-256 comparison. A missing object is
-recorded as `source_unavailable`; it is not an exceptional listing-date guess.
-A checksum mismatch is quarantined.
+trusted only after a fresh local SHA-256 comparison. A checksum mismatch is a
+publication failure and is never allowed into Silver.
 
 ## 3. Normalize Silver
 
 The normalizer validates source shape, time units, interval alignment, OHLC,
-activity fields, monotonic order, duplicates and gaps. It then emits a
-deterministic CSV.gz interchange file and JSON quality report.
+activity fields, monotonic order, duplicates and gaps. It emits deterministic
+CSV.gz files and JSON quality reports.
 
 ## 4. Derive Gold
 
-Derive larger timeframes only from a pinned 1m Silver release. Drop and count
-incomplete buckets. Session/calendar views are derived, not embedded in Silver.
+Derive 5m, 15m, 1h and 4h only from a pinned 1m Silver partition. Drop and count
+incomplete buckets; never synthesize a missing source bar.
 
-## 5. Catalog and publish
+## 5. Build annual distribution assets
 
-Hash every release file and write a catalog. A reviewed, bounded default release
-is committed under:
+`build-full-history-market-data-release` runs a matrix partition for each year.
+Each job:
+
+1. plans and checksum-verifies the year's official source candidates;
+2. normalizes every available archive;
+3. derives all four Gold intervals;
+4. rejects unexpected download or checksum statuses;
+5. writes a partition catalog and metadata;
+6. creates `market-data-<year>-v1.0.0.zip`;
+7. records ZIP bytes, SHA-256, file counts and row counts;
+8. uploads the ZIP to a draft GitHub Release.
+
+Annual assets are independently retryable and remain below GitHub's single-asset
+size boundary. Raw Bronze is not distributed to researchers; its source hashes
+and quality evidence are retained in the partition package.
+
+## 6. Publish the distribution index
+
+The final workflow job requires all annual jobs to succeed. It aggregates the
+partition manifests into:
 
 ```text
-data/prepared/<release-id>/
+full-history-v1.0.0.index.json
+full-history-v1.0.0.index.json.sha256
 ```
 
-Update `data/prepared/CURRENT` in the same pull request. CI must verify every
-cataloged file before merge. Google Drive may receive an immutable backup bundle
-under `Project/SMC_ICT_3_LIVE`, but that backup is not the researcher entrypoint.
+Before publishing the draft release, it checks that all ten annual ZIPs and both
+index files exist. The index is the sole installation authority used by
+`smc-data install`.
 
-A release contains source manifest, download report, quality reports, catalog,
-release metadata and research-ready Silver/Gold files. Bronze may remain in the
-archive when it is unnecessary for normal strategy work.
+A published version is immutable. A corrected source, schema or pipeline creates
+a new release ID and tag; assets in an existing published version are not
+silently replaced.
 
-## 6. Detect upstream revisions
+## 7. Bundled golden release
+
+The bounded `data/prepared/<release-id>` release is committed in Git to keep CI,
+examples and scenario contracts executable without downloading the full history.
+Update `data/prepared/CURRENT` only through a reviewed pull request whose CI
+verifies every cataloged file.
+
+## 8. Detect upstream revisions
 
 Binance may replace archived objects. A provenance audit re-fetches checksum
-files and compares them with the pinned release. A changed source never mutates
-an old release. Instead:
+files and compares them with the pinned release. A change never mutates an old
+release. Instead:
 
 1. record old and new provider checksums;
-2. acquire the replacement into a new Bronze release;
+2. acquire the replacement into a new Bronze build;
 3. rerun normalization and quality comparison;
 4. explain row-level impact;
-5. publish a new data version through review.
+5. publish a new GitHub data version.
 
-The `audit-golden-source-reproducibility` workflow is explicit/manual and is not
-run on every strategy pull request.
-
-## Incremental cadence
-
-- As needed: acquire the latest complete UTC period for a candidate release.
-- Before publication: reconcile daily candidates with official monthly objects.
-- At audit points: revalidate historical checksums and instrument metadata.
-
-No cadence silently changes `data/prepared/CURRENT`. Publication always requires
-an explicit release commit and review.
+`audit-golden-source-reproducibility` is explicit/manual and does not run on
+every strategy pull request.
 
 ## Recovery
 
-Never edit an immutable release in place. Failed objects remain in Quarantine
-with error and expected/actual hashes. A rerun is idempotent: verified objects
-are reused; only absent or invalid objects are retried.
+A failed annual matrix job leaves the GitHub Release in draft state. Rerun the
+failed partition; asset upload uses checksum replacement while the release is
+still draft. Publication occurs only after every expected asset is present.
+
+Never edit an installed or published release in place. Local installation uses a
+staging directory and atomic rename, so a failed download, extraction or hash
+check cannot replace a previously valid dataset.
