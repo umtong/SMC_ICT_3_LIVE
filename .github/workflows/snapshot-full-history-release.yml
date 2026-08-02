@@ -20,6 +20,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          echo "snapshot=after-finalizer-syntax-repair"
           for workflow in \
             finalize-full-history-pipeline.yml \
             build-full-history-release.yml \
