@@ -1,7 +1,6 @@
-name: materialize-golden-market-data
+name: audit-golden-source-reproducibility
 
 on:
-  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -18,7 +17,7 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -e .
-      - name: Download, verify, normalize and catalog
+      - name: Download, verify, normalize and catalog from official sources
         run: |
           set -euo pipefail
           mkdir -p release/{01_RAW_BRONZE,02_NORMALIZED_SILVER,03_DERIVED_GOLD,04_CATALOG_QUALITY,00_README}
@@ -38,7 +37,7 @@ jobs:
             --catalog release/04_CATALOG_QUALITY/catalog.csv \
             --release-id golden-2024-01-v1.0.0 \
             --out release/RELEASE.json
-      - name: Check release is non-empty
+      - name: Check audit output
         run: |
           test "$(find release/01_RAW_BRONZE -name '*.zip' | wc -l)" -eq 20
           test "$(find release/02_NORMALIZED_SILVER -name '*.csv.gz' | wc -l)" -eq 20
@@ -50,13 +49,13 @@ jobs:
           rejected = [r for r in rows if r['status'] not in accepted]
           if len(rows) != 20 or rejected:
               raise SystemExit(
-                  f"golden release requires 20 verified source objects; rows={len(rows)}, rejected={rejected}"
+                  f"golden audit requires 20 verified source objects; rows={len(rows)}, rejected={rejected}"
               )
           print({r['status'] for r in rows}, len(rows))
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: golden-2024-01-v1.0.0
+          name: golden-source-audit-2024-01-v1.0.0
           path: release/
           if-no-files-found: error
           retention-days: 30
