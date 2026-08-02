@@ -2,18 +2,31 @@
 
 ## Start from the prepared release
 
-The repository already contains the validated default market-data release.
 Do not begin a strategy task by searching Google Drive, choosing another data
-vendor, or downloading Binance archives again.
+vendor, or downloading Binance archives.
+
+For immediate contract and code work, the repository already includes the
+validated January 2024 golden release:
 
 ```bash
 PYTHONPATH=src python3 -m smc_ict_data.cli ready --verify
 ```
 
-`data/prepared/CURRENT` identifies the default release. Use the returned
-`silver_root` for 1-minute source facts and `gold_root` for the committed 5m,
-15m, 1h and 4h derivatives. Upstream acquisition commands are for data-release
-maintainers and provenance audits, not the normal research path.
+For actual historical research, install the prebuilt full-history distribution
+from this project's GitHub Release:
+
+```bash
+make setup-full
+```
+
+This installs validated Silver/Gold partitions covering 2017-01-01 through
+2026-07-31. It downloads only project-produced GitHub assets, verifies the asset
+SHA-256 and every extracted file, and writes `data/installed/CURRENT`.
+Thereafter `smc-data ready` and `load_prepared_release()` select the installed
+full history automatically.
+
+Upstream `plan`, `download` and `build` commands are for data-release maintainers
+and provenance audits only.
 
 ## Pin inputs
 
@@ -21,6 +34,7 @@ Every experiment records:
 
 - Git commit of strategy/feature code;
 - market-data release ID and catalog SHA-256;
+- installed partition years;
 - source dataset(s) and symbols;
 - decision and execution timestamp policy;
 - fee, funding, latency and slippage model;
