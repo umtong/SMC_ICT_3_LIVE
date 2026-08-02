@@ -1,0 +1,503 @@
+name: integrate-historical-kline-canonicalization
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/integrate-historical-canonicalization.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  integrate-and-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Integrate canonicalization into the normalizer and quality contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+
+          def replace_once(path: Path, old: str, new: str) -> None:
+              text = path.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(
+                      f"expected one replacement in {path}: found {count}; marker={old[:120]!r}"
+                  )
+              path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+
+          normalizer = Path("src/smc_ict_data/normalization.py")
+          replace_once(
+              normalizer,
+              "from .archive import ArchiveRef, DownloadResult, file_sha256, read_manifest\n",
+              "from .archive import ArchiveRef, DownloadResult, file_sha256, read_manifest\n"
+              "from .canonicalize import (\n"
+              "    CanonicalizationStats,\n"
+              "    SourceCanonicalizationError,\n"
+              "    SourceTimeAnomaly,\n"
+              "    canonicalize_kline_rows,\n"
+              ")\n",
+          )
+          replace_once(
+              normalizer,
+              'PIPELINE_VERSION = "1.0.1"',
+              'PIPELINE_VERSION = "1.0.2"',
+          )
+          replace_once(
+              normalizer,
+              "    source_close_time_anomaly_count: int = 0\n"
+              "    source_close_time_max_early_us: int = 0\n"
+              "    status: str = \"valid\"\n",
+              "    source_close_time_anomaly_count: int = 0\n"
+              "    source_close_time_max_early_us: int = 0\n"
+              "    source_open_time_anomaly_count: int = 0\n"
+              "    source_open_time_max_late_us: int = 0\n"
+              "    source_close_time_late_count: int = 0\n"
+              "    source_close_time_max_late_us: int = 0\n"
+              "    segmented_bar_count: int = 0\n"
+              "    segmented_source_rows_merged: int = 0\n"
+              "    quarantined_source_row_count: int = 0\n"
+              "    quarantined_canonical_bar_count: int = 0\n"
+              "    anomaly_examples: tuple[SourceTimeAnomaly, ...] = ()\n"
+              "    status: str = \"valid\"\n",
+          )
+          replace_once(
+              normalizer,
+              "    source_close_time_anomalies = 0\n"
+              "    source_close_time_max_early_us = 0\n",
+              "    canonicalization = CanonicalizationStats()\n",
+          )
+          replace_once(
+              normalizer,
+              "        writer = csv.DictWriter(text, fieldnames=KLINE_OUTPUT_COLUMNS, lineterminator=\"\\n\")\n"
+              "        writer.writeheader()\n"
+              "        for line_number, raw in enumerate(_archive_rows(archive), start=1):\n"
+              "            rows_read += 1\n"
+              "            if len(raw) < 12:\n"
+              "                raise DataContractError(\n"
+              "                    f\"expected at least 12 columns at source row {line_number}, got {len(raw)}\"\n"
+              "                )\n"
+              "            raw = [item.strip() for item in raw[:12]]\n"
+              "            open_time_us = timestamp_to_us(raw[0])\n",
+              "        writer = csv.DictWriter(text, fieldnames=KLINE_OUTPUT_COLUMNS, lineterminator=\"\\n\")\n"
+              "        writer.writeheader()\n\n"
+              "        def validate_source_row(row: list[str], source_line_number: int) -> None:\n"
+              "            _validate_ohlc(\n"
+              "                row,\n"
+              "                source_line_number,\n"
+              "                allow_negative=ref.dataset == \"premiumIndexKlines\",\n"
+              "            )\n"
+              "            if ref.kind == \"kline\":\n"
+              "                _validate_trade_fields(row, source_line_number)\n\n"
+              "        def canonical_rows() -> Iterator[list[str]]:\n"
+              "            try:\n"
+              "                yield from canonicalize_kline_rows(\n"
+              "                    _archive_rows(archive),\n"
+              "                    duration_us=duration_us,\n"
+              "                    kind=ref.kind,\n"
+              "                    timestamp_to_us=timestamp_to_us,\n"
+              "                    validate_row=validate_source_row,\n"
+              "                    stats=canonicalization,\n"
+              "                )\n"
+              "            except SourceCanonicalizationError as exc:\n"
+              "                raise DataContractError(str(exc)) from exc\n\n"
+              "        for line_number, raw in enumerate(canonical_rows(), start=1):\n"
+              "            rows_read += 1\n"
+              "            open_time_us = timestamp_to_us(raw[0])\n",
+          )
+          replace_once(
+              normalizer,
+              "            source_close_us = timestamp_to_us(raw[6])\n"
+              "            close_exclusive_us = open_time_us + duration_us\n"
+              "            if not open_time_us <= source_close_us <= close_exclusive_us:\n"
+              "                raise DataContractError(\n"
+              "                    f\"source close time is outside the declared interval at row {line_number}: \"\n"
+              "                    f\"open={open_time_us}, source_close={source_close_us}, \"\n"
+              "                    f\"close_exclusive={close_exclusive_us}\"\n"
+              "                )\n"
+              "            close_delta = close_exclusive_us - source_close_us\n"
+              "            if close_delta > 1_000:\n"
+              "                source_close_time_anomalies += 1\n"
+              "                source_close_time_max_early_us = max(\n"
+              "                    source_close_time_max_early_us,\n"
+              "                    close_delta,\n"
+              "                )\n",
+              "            source_close_us = timestamp_to_us(raw[6])\n"
+              "            close_exclusive_us = open_time_us + duration_us\n"
+              "            if not open_time_us <= source_close_us <= close_exclusive_us:\n"
+              "                raise DataContractError(\n"
+              "                    f\"canonicalizer emitted an invalid close time at row {line_number}: \"\n"
+              "                    f\"open={open_time_us}, source_close={source_close_us}, \"\n"
+              "                    f\"close_exclusive={close_exclusive_us}\"\n"
+              "                )\n",
+          )
+          replace_once(
+              normalizer,
+              "        rows_read=rows_read,\n"
+              "        rows_written=rows_written,\n"
+              "        exact_duplicates_removed=duplicates,\n",
+              "        rows_read=canonicalization.source_rows_read,\n"
+              "        rows_written=rows_written,\n"
+              "        exact_duplicates_removed=(\n"
+              "            duplicates + canonicalization.exact_duplicates_removed\n"
+              "        ),\n",
+          )
+          replace_once(
+              normalizer,
+              "        source_close_time_anomaly_count=source_close_time_anomalies,\n"
+              "        source_close_time_max_early_us=source_close_time_max_early_us,\n"
+              "    )\n",
+              "        source_close_time_anomaly_count=(\n"
+              "            canonicalization.source_close_time_anomaly_count\n"
+              "        ),\n"
+              "        source_close_time_max_early_us=(\n"
+              "            canonicalization.source_close_time_max_early_us\n"
+              "        ),\n"
+              "        source_open_time_anomaly_count=(\n"
+              "            canonicalization.source_open_time_anomaly_count\n"
+              "        ),\n"
+              "        source_open_time_max_late_us=(\n"
+              "            canonicalization.source_open_time_max_late_us\n"
+              "        ),\n"
+              "        source_close_time_late_count=(\n"
+              "            canonicalization.source_close_time_late_count\n"
+              "        ),\n"
+              "        source_close_time_max_late_us=(\n"
+              "            canonicalization.source_close_time_max_late_us\n"
+              "        ),\n"
+              "        segmented_bar_count=canonicalization.segmented_bar_count,\n"
+              "        segmented_source_rows_merged=(\n"
+              "            canonicalization.segmented_source_rows_merged\n"
+              "        ),\n"
+              "        quarantined_source_row_count=(\n"
+              "            canonicalization.quarantined_source_row_count\n"
+              "        ),\n"
+              "        quarantined_canonical_bar_count=(\n"
+              "            canonicalization.quarantined_canonical_bar_count\n"
+              "        ),\n"
+              "        anomaly_examples=tuple(canonicalization.anomaly_examples),\n"
+              "        status=(\n"
+              "            \"valid_with_quarantine\"\n"
+              "            if canonicalization.quarantined_canonical_bar_count\n"
+              "            else \"valid\"\n"
+              "        ),\n"
+              "    )\n",
+          )
+          replace_once(
+              normalizer,
+              "        except DataContractError as exc:\n",
+              "        except (DataContractError, SourceCanonicalizationError) as exc:\n",
+          )
+
+          canonicalizer = Path("src/smc_ict_data/canonicalize.py")
+          replace_once(
+              canonicalizer,
+              "            if open_time_us == previous_raw_open_us:\n"
+              "                if fingerprint == previous_raw_fingerprint:\n"
+              "                    stats.exact_duplicates_removed += 1\n"
+              "                    continue\n",
+              "            if open_time_us == previous_raw_open_us:\n"
+              "                if fingerprint == previous_raw_fingerprint:\n"
+              "                    stats.exact_duplicates_removed += 1\n"
+              "                    continue\n"
+              "                raise SourceCanonicalizationError(\n"
+              "                    f\"conflicting duplicate open time {open_time_us} \"\n"
+              "                    f\"at source row {line_number}\"\n"
+              "                )\n",
+          )
+          replace_once(
+              canonicalizer,
+              "        if (\n"
+              "            previous_raw_open_us == open_time_us\n"
+              "            and previous_raw_fingerprint is not None\n"
+              "            and fingerprint != previous_raw_fingerprint\n"
+              "        ):\n"
+              "            current.invalid_reasons.add(\"conflicting_duplicate_source_open\")\n"
+              "            stats.record(\n"
+              "                line_number=line_number,\n"
+              "                reason=\"conflicting_duplicate_source_open\",\n"
+              "                open_time_us=open_time_us,\n"
+              "                source_close_time_us=source_close_time_us,\n"
+              "                canonical_open_time_us=bucket_start_us,\n"
+              "                details=\"same source open timestamp with different fields\",\n"
+              "            )\n\n",
+              "",
+          )
+
+          materializer = Path("scripts/materialize_partition.py")
+          replace_once(
+              materializer,
+              "def summarize_normalization_quality(root: Path) -> dict[str, int]:\n"
+              "    totals: Counter[str] = Counter()\n"
+              "    maximum_early_us = 0\n"
+              "    report_count = 0\n"
+              "    for path in sorted(root.rglob(\"*.quality.json\")):\n"
+              "        payload = json.loads(path.read_text(encoding=\"utf-8\"))\n"
+              "        report_count += 1\n"
+              "        for field in (\n"
+              "            \"rows_read\",\n"
+              "            \"rows_written\",\n"
+              "            \"exact_duplicates_removed\",\n"
+              "            \"gap_count\",\n"
+              "            \"missing_bar_count\",\n"
+              "            \"source_close_time_anomaly_count\",\n"
+              "        ):\n"
+              "            totals[field] += int(payload.get(field, 0))\n"
+              "        maximum_early_us = max(\n"
+              "            maximum_early_us,\n"
+              "            int(payload.get(\"source_close_time_max_early_us\", 0)),\n"
+              "        )\n"
+              "    return {\n"
+              "        \"normalization_reports\": report_count,\n"
+              "        **dict(sorted(totals.items())),\n"
+              "        \"source_close_time_max_early_us\": maximum_early_us,\n"
+              "    }\n",
+              "def summarize_normalization_quality(root: Path) -> dict[str, int]:\n"
+              "    totals: Counter[str] = Counter()\n"
+              "    maxima: Counter[str] = Counter()\n"
+              "    report_count = 0\n"
+              "    for path in sorted(root.rglob(\"*.quality.json\")):\n"
+              "        payload = json.loads(path.read_text(encoding=\"utf-8\"))\n"
+              "        report_count += 1\n"
+              "        for field in (\n"
+              "            \"rows_read\",\n"
+              "            \"rows_written\",\n"
+              "            \"exact_duplicates_removed\",\n"
+              "            \"gap_count\",\n"
+              "            \"missing_bar_count\",\n"
+              "            \"source_open_time_anomaly_count\",\n"
+              "            \"source_close_time_anomaly_count\",\n"
+              "            \"source_close_time_late_count\",\n"
+              "            \"segmented_bar_count\",\n"
+              "            \"segmented_source_rows_merged\",\n"
+              "            \"quarantined_source_row_count\",\n"
+              "            \"quarantined_canonical_bar_count\",\n"
+              "        ):\n"
+              "            totals[field] += int(payload.get(field, 0))\n"
+              "        for field in (\n"
+              "            \"source_open_time_max_late_us\",\n"
+              "            \"source_close_time_max_early_us\",\n"
+              "            \"source_close_time_max_late_us\",\n"
+              "        ):\n"
+              "            maxima[field] = max(maxima[field], int(payload.get(field, 0)))\n"
+              "    return {\n"
+              "        \"normalization_reports\": report_count,\n"
+              "        **dict(sorted(totals.items())),\n"
+              "        **dict(sorted(maxima.items())),\n"
+              "    }\n",
+          )
+
+          tests = Path("tests/test_normalization.py")
+          replace_once(
+              tests,
+              "def test_source_close_outside_declared_interval_is_rejected(tmp_path: Path) -> None:\n"
+              "    start = _epoch_ms()\n"
+              "    invalid = _row(start)\n"
+              "    invalid[6] = str(start + 60_001)\n"
+              "    archive = tmp_path / \"invalid-close.zip\"\n"
+              "    _zip_rows(archive, [invalid])\n\n"
+              "    with pytest.raises(DataContractError, match=\"outside the declared interval\"):\n"
+              "        normalize_kline_archive(\n"
+              "            _ref(),\n"
+              "            archive,\n"
+              "            tmp_path / \"invalid.csv.gz\",\n"
+              "            tmp_path / \"invalid.quality.json\",\n"
+              "        )\n",
+              "def test_source_close_crossing_interval_is_quarantined(tmp_path: Path) -> None:\n"
+              "    start = _epoch_ms()\n"
+              "    invalid = _row(start)\n"
+              "    invalid[6] = str(start + 60_001)\n"
+              "    archive = tmp_path / \"invalid-close.zip\"\n"
+              "    _zip_rows(archive, [invalid])\n\n"
+              "    output = tmp_path / \"invalid.csv.gz\"\n"
+              "    report = normalize_kline_archive(\n"
+              "        _ref(),\n"
+              "        archive,\n"
+              "        output,\n"
+              "        tmp_path / \"invalid.quality.json\",\n"
+              "    )\n\n"
+              "    assert report.rows_read == 1\n"
+              "    assert report.rows_written == 0\n"
+              "    assert report.quarantined_source_row_count == 1\n"
+              "    assert report.quarantined_canonical_bar_count == 1\n"
+              "    assert report.source_close_time_late_count == 1\n"
+              "    assert report.status == \"valid_with_quarantine\"\n"
+              "    with gzip.open(output, \"rt\", encoding=\"utf-8\", newline=\"\") as handle:\n"
+              "        assert list(csv.DictReader(handle)) == []\n",
+          )
+          insertion_marker = (
+              "\ndef test_reference_kline_does_not_mislabel_auxiliary_fields_as_volume"
+          )
+          new_tests = r'''
+
+
+def test_historical_segmented_minute_is_losslessly_merged(tmp_path: Path) -> None:
+    start = _epoch_ms()
+    first = _row(start)
+    first[1:5] = ["100", "102", "99", "100.5"]
+    first[5] = "2"
+    first[6] = str(start + 20_809)
+    first[7:11] = ["200", "3", "1", "100"]
+
+    second = _row(start + 20_810)
+    second[1:5] = ["100.5", "103", "100", "102"]
+    second[5] = "3"
+    second[6] = str(start + 59_999)
+    second[7:11] = ["310", "4", "2", "205"]
+
+    archive = tmp_path / "segmented.zip"
+    _zip_rows(archive, [first, second])
+    output = tmp_path / "segmented.csv.gz"
+    report = normalize_kline_archive(
+        _ref(), archive, output, tmp_path / "segmented.quality.json"
+    )
+
+    assert report.rows_read == 2
+    assert report.rows_written == 1
+    assert report.segmented_bar_count == 1
+    assert report.segmented_source_rows_merged == 1
+    assert report.source_open_time_anomaly_count == 1
+    assert report.quarantined_canonical_bar_count == 0
+    with gzip.open(output, "rt", encoding="utf-8", newline="") as handle:
+        record = next(csv.DictReader(handle))
+    assert record["open_time_us"] == str(start * 1_000)
+    assert record["available_time_us"] == str(start * 1_000 + 60_000_000)
+    assert record["open"] == "100"
+    assert record["high"] == "103"
+    assert record["low"] == "99"
+    assert record["close"] == "102"
+    assert record["base_volume"] == "5"
+    assert record["quote_volume"] == "510"
+    assert record["trade_count"] == "7"
+    assert record["taker_buy_base_volume"] == "3"
+    assert record["taker_buy_quote_volume"] == "305"
+
+
+def test_source_close_before_open_is_quarantined(tmp_path: Path) -> None:
+    start = _epoch_ms()
+    invalid = _row(start)
+    invalid[6] = str(start - 1)
+    archive = tmp_path / "close-before-open.zip"
+    _zip_rows(archive, [invalid])
+
+    report = normalize_kline_archive(
+        _ref(),
+        archive,
+        tmp_path / "close-before-open.csv.gz",
+        tmp_path / "close-before-open.quality.json",
+    )
+
+    assert report.rows_written == 0
+    assert report.quarantined_canonical_bar_count == 1
+    assert report.status == "valid_with_quarantine"
+    assert report.anomaly_examples[0].reason == "source_close_before_open"
+
+
+def test_unaligned_row_without_bucket_start_is_quarantined(tmp_path: Path) -> None:
+    start = _epoch_ms()
+    orphan = _row(start + 20_810)
+    orphan[6] = str(start + 59_999)
+    archive = tmp_path / "orphan-segment.zip"
+    _zip_rows(archive, [orphan])
+
+    report = normalize_kline_archive(
+        _ref(),
+        archive,
+        tmp_path / "orphan-segment.csv.gz",
+        tmp_path / "orphan-segment.quality.json",
+    )
+
+    assert report.rows_written == 0
+    assert report.source_open_time_anomaly_count == 1
+    assert report.quarantined_canonical_bar_count == 1
+
+'''
+          text = tests.read_text(encoding="utf-8")
+          if text.count(insertion_marker) != 1:
+              raise SystemExit("test insertion marker not found exactly once")
+          tests.write_text(
+              text.replace(insertion_marker, new_tests + insertion_marker, 1),
+              encoding="utf-8",
+          )
+
+          contract = Path("docs/DATA_CONTRACT.md")
+          replace_once(
+              contract,
+              "Modern source objects normally place the source close one microsecond or one\n"
+              "millisecond before the exclusive interval end. Some historical Binance Spot\n"
+              "objects instead contain an earlier timestamp inside the same candle, consistent\n"
+              "with a last-observed event timestamp. Such a value is source evidence, not a new\n"
+              "bar boundary. The normalizer therefore:\n\n"
+              "1. requires `source_close_time_us` to remain inside the declared candle interval;\n"
+              "2. preserves the value unchanged;\n"
+              "3. keeps canonical completion and strategy availability at the interval end;\n"
+              "4. reports the count and maximum early delta through\n"
+              "   `source_close_time_anomaly_count` and `source_close_time_max_early_us`.\n\n"
+              "A source close before the candle open or after the canonical interval end is a\n"
+              "hard contract violation.\n",
+              "Modern source objects normally use one row per fixed interval. Some historical\n"
+              "Binance Spot archives contain multiple contiguous trade rows inside one nominal\n"
+              "minute, while a small number contain timestamps that cross or contradict the\n"
+              "canonical boundary. The canonicalizer applies these rules before Silver output:\n\n"
+              "1. a trade minute split into contiguous, wholly contained segments is merged\n"
+              "   losslessly: first open, maximum high, minimum low, last close, and additive\n"
+              "   volume/trade-count fields;\n"
+              "2. source timestamps and archive hashes remain auditable in the quality report;\n"
+              "3. a segment that crosses a minute, closes before it opens, overlaps another\n"
+              "   segment, or lacks the aligned beginning of its minute quarantines the affected\n"
+              "   canonical bucket;\n"
+              "4. quarantined buckets become explicit missing observations. They are never\n"
+              "   shifted, clamped, forward-filled, back-filled, or synthesized;\n"
+              "5. canonical completion and legal strategy availability remain\n"
+              "   `open_time_us + interval`, independent of source anomalies.\n\n"
+              "Quality reports count merged segments, non-aligned source opens, early/late close\n"
+              "times, quarantined rows and quarantined canonical buckets, with bounded source-line\n"
+              "examples. Exact duplicate rows are audited and removed; a conflicting duplicate or\n"
+              "non-monotonic source order remains a hard contract violation.\n",
+          )
+          replace_once(
+              contract,
+              "- open times are aligned to the declared fixed interval;\n"
+              "- source rows are monotonically increasing;\n",
+              "- emitted open times are aligned to the declared fixed interval;\n"
+              "- source rows are monotonically increasing; historical contained segments are\n"
+              "  canonicalized only under the explicit merge contract above;\n",
+          )
+          PY
+
+      - name: Install, format, lint and test
+        run: |
+          set -euo pipefail
+          python -m pip install -e '.[dev]'
+          ruff format src tests scripts
+          ruff check src tests scripts
+          pytest
+          python -m compileall -q src tests scripts
+
+      - name: Publish validated integration to main
+        run: |
+          set -euo pipefail
+          rm .github/workflows/integrate-historical-canonicalization.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Canonicalize anomalous historical klines without fabricating bars"
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
