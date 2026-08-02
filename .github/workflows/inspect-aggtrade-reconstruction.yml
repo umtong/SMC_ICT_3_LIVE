@@ -1,0 +1,206 @@
+name: inspect-aggtrade-reconstruction
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/inspect-aggtrade-reconstruction.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Download official kline and aggTrades archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/source && mkdir -p /tmp/source
+          for spec in ETHUSDT:2017-12 ETHUSDT:2018-02; do
+            symbol=${spec%%:*}
+            month=${spec##*:}
+            curl --fail --location --silent --show-error \
+              "https://data.binance.vision/data/spot/monthly/klines/$symbol/1m/$symbol-1m-$month.zip" \
+              --output "/tmp/source/$symbol-kline-$month.zip"
+            curl --fail --location --silent --show-error \
+              "https://data.binance.vision/data/spot/monthly/aggTrades/$symbol/$symbol-aggTrades-$month.zip" \
+              --output "/tmp/source/$symbol-agg-$month.zip"
+          done
+          curl --fail --location --silent --show-error \
+            "https://data.binance.vision/data/spot/monthly/klines/SOLUSDT/1m/SOLUSDT-1m-2021-12.zip" \
+            --output /tmp/source/SOLUSDT-kline-2021-12.zip
+
+      - name: Compare UTC-minute aggTrades reconstruction with aligned klines
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from collections import Counter, defaultdict
+          from decimal import Decimal
+          from pathlib import Path
+          import csv
+          import io
+          import json
+          import zipfile
+
+          root = Path('/tmp/source')
+          minute_ms = 60_000
+
+          def read_zip_csv(path: Path):
+              with zipfile.ZipFile(path) as archive:
+                  names = [name for name in archive.namelist() if name.lower().endswith('.csv')]
+                  assert len(names) == 1, names
+                  with archive.open(names[0]) as raw:
+                      with io.TextIOWrapper(raw, encoding='utf-8-sig', newline='') as text:
+                          reader = csv.reader(text)
+                          first = next(reader)
+                          try:
+                              int(first[0])
+                          except ValueError:
+                              pass
+                          else:
+                              yield first
+                          yield from reader
+
+          def aggregate(path: Path):
+              buckets = {}
+              for row in read_zip_csv(path):
+                  # a,p,q,f,l,T,m,M
+                  price = Decimal(row[1])
+                  qty = Decimal(row[2])
+                  first_id = int(row[3])
+                  last_id = int(row[4])
+                  timestamp = int(row[5])
+                  buyer_maker = row[6].lower() == 'true'
+                  key = timestamp // minute_ms * minute_ms
+                  current = buckets.get(key)
+                  trade_count = last_id - first_id + 1
+                  quote = price * qty
+                  if current is None:
+                      current = {
+                          'open': price,
+                          'high': price,
+                          'low': price,
+                          'close': price,
+                          'base': Decimal(0),
+                          'quote': Decimal(0),
+                          'count': 0,
+                          'taker_base': Decimal(0),
+                          'taker_quote': Decimal(0),
+                          'first_timestamp': timestamp,
+                          'last_timestamp': timestamp,
+                      }
+                      buckets[key] = current
+                  current['high'] = max(current['high'], price)
+                  current['low'] = min(current['low'], price)
+                  current['close'] = price
+                  current['base'] += qty
+                  current['quote'] += quote
+                  current['count'] += trade_count
+                  current['last_timestamp'] = timestamp
+                  if not buyer_maker:
+                      current['taker_base'] += qty
+                      current['taker_quote'] += quote
+              return buckets
+
+          def numeric_equal(left: str, right: Decimal) -> bool:
+              return Decimal(left) == right
+
+          reports = []
+          for month in ('2017-12', '2018-02'):
+              kline_path = root / f'ETHUSDT-kline-{month}.zip'
+              agg_path = root / f'ETHUSDT-agg-{month}.zip'
+              buckets = aggregate(agg_path)
+              source = list(read_zip_csv(kline_path))
+              counts = Counter(source_rows=len(source), agg_minutes=len(buckets))
+              mismatches = []
+              off_grid_ranges = []
+              off_grid_numbers = []
+              for number, row in enumerate(source, start=1):
+                  open_ms = int(row[0])
+                  if open_ms % minute_ms:
+                      off_grid_numbers.append(number)
+                      continue
+                  bucket = buckets.get(open_ms)
+                  if bucket is None:
+                      if Decimal(row[5]) != 0 or int(row[8]) != 0:
+                          counts['aligned_active_missing_agg'] += 1
+                      else:
+                          counts['aligned_zero_without_agg'] += 1
+                      continue
+                  counts['aligned_with_agg'] += 1
+                  checks = {
+                      'open': numeric_equal(row[1], bucket['open']),
+                      'high': numeric_equal(row[2], bucket['high']),
+                      'low': numeric_equal(row[3], bucket['low']),
+                      'close': numeric_equal(row[4], bucket['close']),
+                      'base': numeric_equal(row[5], bucket['base']),
+                      'quote': numeric_equal(row[7], bucket['quote']),
+                      'count': int(row[8]) == bucket['count'],
+                      'taker_base': numeric_equal(row[9], bucket['taker_base']),
+                      'taker_quote': numeric_equal(row[10], bucket['taker_quote']),
+                  }
+                  if all(checks.values()):
+                      counts['aligned_exact_matches'] += 1
+                  else:
+                      counts['aligned_mismatches'] += 1
+                      if len(mismatches) < 8:
+                          mismatches.append({
+                              'row': number,
+                              'open_ms': open_ms,
+                              'failed': [key for key, passed in checks.items() if not passed],
+                              'source': row[1:11],
+                              'aggregate': {key: str(value) for key, value in bucket.items()},
+                          })
+
+              if off_grid_numbers:
+                  start = previous = off_grid_numbers[0]
+                  for value in off_grid_numbers[1:]:
+                      if value != previous + 1:
+                          off_grid_ranges.append([start, previous])
+                          start = value
+                      previous = value
+                  off_grid_ranges.append([start, previous])
+              counts['off_grid_rows'] = len(off_grid_numbers)
+              reports.append({
+                  'month': month,
+                  'counts': dict(sorted(counts.items())),
+                  'off_grid_ranges': off_grid_ranges,
+                  'mismatch_samples': mismatches,
+              })
+
+          sol_rows = list(read_zip_csv(root / 'SOLUSDT-kline-2021-12.zip'))
+          sol_counts = Counter(rows=len(sol_rows))
+          sol_samples = []
+          for number, row in enumerate(sol_rows, start=1):
+              open_ms = int(row[0])
+              close_ms = int(row[6])
+              delta = close_ms - (open_ms + minute_ms)
+              if delta > 0:
+                  sol_counts['close_after_end'] += 1
+                  zero = Decimal(row[5]) == 0 and Decimal(row[7]) == 0 and int(row[8]) == 0
+                  flat = len(set(row[1:5])) == 1
+                  sol_counts['close_after_end_zero'] += int(zero)
+                  sol_counts['close_after_end_flat'] += int(flat)
+                  sol_counts['max_late_ms'] = max(sol_counts['max_late_ms'], delta)
+                  if len(sol_samples) < 10:
+                      sol_samples.append({
+                          'row': number,
+                          'open_ms': open_ms,
+                          'close_ms': close_ms,
+                          'late_ms': delta,
+                          'zero_activity': zero,
+                          'flat': flat,
+                          'ohlc': row[1:5],
+                          'volume': row[5],
+                          'trade_count': row[8],
+                      })
+          reports.append({
+              'month': 'SOLUSDT-2021-12',
+              'counts': dict(sorted(sol_counts.items())),
+              'late_close_samples': sol_samples,
+          })
+          print(json.dumps(reports, indent=2, sort_keys=True))
+          PY
