@@ -34,45 +34,62 @@ ordinary spreadsheet:
 - **Data contracts:** schemas and CI tests are versioned with code and prepared
   release catalogs.
 
-## Default research surface
+## Research surfaces
 
-A validated, bounded Silver/Gold release is committed under `data/prepared`.
-It is the default input for all researchers and is available immediately after
-cloning `main`. No Drive mount, exchange API call, archive download or data-vendor
-selection is part of the normal research bootstrap.
+### Bundled golden contract release
 
-`data/prepared/CURRENT` selects one immutable release. The release contains a
-machine-readable metadata contract and a SHA-256 catalog. CI verifies the
-catalog and every tracked data file.
+A bounded Silver/Gold release is committed under `data/prepared`. It is
+available immediately after cloning `main` and is used for code, schema, CI and
+scenario-contract work without network access.
+
+`data/prepared/CURRENT` selects the immutable bundled release. CI verifies its
+catalog and every tracked file.
+
+### Full-history prepared distribution
+
+The complete research period is too large for ordinary Git history. It is
+therefore materialized once by the project and published as immutable yearly
+assets under a versioned GitHub Release.
+
+```text
+GitHub Release index
+        ↓ asset size + SHA-256
+Yearly prepared ZIP
+        ↓ internal catalog verification
+Silver / Gold / quality files
+        ↓ merged catalog + final verification
+data/installed/<release-id>
+```
+
+`smc-data install` downloads project-produced assets, never exchange archives.
+It validates the outer ZIP and every inner file, installs atomically, and writes
+`data/installed/CURRENT`. The loader gives an installed full-history release
+priority over the bundled golden release.
 
 ## Storage responsibilities
 
-### GitHub
-
-The repository is the single research entrypoint and contains:
+### GitHub repository
 
 - collectors, normalizers and deterministic resamplers;
 - configuration, schemas, tests and workflows;
 - source/candidate manifests and release metadata;
-- a versioned research-ready Silver/Gold release;
-- its quality reports and content catalog;
-- SQL views and documentation.
+- the bounded golden Silver/Gold release;
+- loaders, installers, catalogs and documentation.
 
-The committed release is deliberately bounded so cloning remains practical.
-Additional periods are published as explicit, reviewed data-version changes;
-they are not silently fetched during a strategy run.
+### GitHub Releases
+
+- prebuilt yearly full-history Silver/Gold partitions;
+- partition metadata and quality evidence;
+- a distribution index containing asset URLs, sizes, SHA-256 values, row and
+  file totals;
+- permanent, versioned installation inputs for researchers.
 
 ### Google Drive
 
-Drive is optional durable archive and backup storage for:
-
-- exact raw archives and companion checksums;
-- historical release bundles;
-- superseded or larger data artifacts.
-
-Drive is not an execution environment and is not required to locate, initialize
-or run the default research dataset. Code must not assume any Drive folder
-outside `Project/SMC_ICT_3_LIVE`.
+Drive is optional archive and backup storage for raw evidence or duplicate
+release bundles. It is not an execution surface and is not required for clone,
+installation or research. Code must not assume any Drive folder outside
+`Project/SMC_ICT_3_LIVE`.
 
 ## Partition contract
 
@@ -86,19 +103,24 @@ Examples:
 
 ```text
 data/prepared/<release>/silver/binance/spot/klines/BTCUSDT/1m/2024/01/BTCUSDT-1m-2024-01.csv.gz
-data/prepared/<release>/gold/binance/futures/um/markPriceKlines/ETHUSDT/15m/2024/01/ETHUSDT-15m-2024-01.csv.gz
+data/installed/<release>/gold/binance/futures/um/markPriceKlines/ETHUSDT/15m/2024/01/ETHUSDT-15m-2024-01.csv.gz
 ```
 
-Monthly partitions avoid tiny-file proliferation while still permitting
-bounded replay. Daily source objects may be used while constructing a future
-release, but researchers consume only the reviewed release output.
+Monthly files avoid tiny-file proliferation while annual distribution assets
+permit independent retry, checksum verification and selective installation.
+Daily source objects may be used while constructing a release, but researchers
+consume only reviewed Silver/Gold output.
 
 ## Acquisition boundary
 
-Official downloads and Bronze materialization remain available for maintainers
-who create a new release or audit provenance. They do not run on every pull
-request and are not a prerequisite for strategy work. The default CI path reads
-and verifies the committed prepared release without external market-data I/O.
+Official downloads and Bronze materialization are release-maintainer work. The
+full-history builder performs them once, validates provider checksums, derives
+Gold, packages yearly assets and publishes the GitHub distribution index.
+Researchers never repeat this path.
+
+Ordinary pull-request CI reads the bundled release and uses local fixtures. The
+full-history build is triggered explicitly as a versioned publication workflow,
+not on every strategy change.
 
 ## Neutrality boundary
 

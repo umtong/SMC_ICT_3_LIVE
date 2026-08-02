@@ -60,13 +60,22 @@ def _find_repository_root() -> Path:
                 return candidate
     raise FileNotFoundError(
         "repository root not found; run inside the checkout or set "
-        f"{ENV_ROOT} to data/prepared or a prepared release directory"
+        f"{ENV_ROOT} to data/installed, data/prepared or a release directory"
     )
+
+
+def _select_default_base() -> Path:
+    repository = _find_repository_root()
+    installed = repository / "data" / "installed"
+    prepared = repository / "data" / "prepared"
+    if (installed / CURRENT_FILE).is_file():
+        return installed
+    return prepared
 
 
 def _resolve_release_root(root: str | Path | None = None) -> tuple[str, Path]:
     configured = root or os.environ.get(ENV_ROOT)
-    base = Path(configured).expanduser().resolve() if configured else _find_repository_root() / "data" / "prepared"
+    base = Path(configured).expanduser().resolve() if configured else _select_default_base()
 
     if (base / METADATA_FILE).is_file():
         metadata = json.loads((base / METADATA_FILE).read_text(encoding="utf-8"))

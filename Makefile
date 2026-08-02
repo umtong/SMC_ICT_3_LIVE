@@ -2,12 +2,19 @@ PYTHON ?= python3
 VENV_PYTHON ?= .venv/bin/python
 VENV_SMC_DATA ?= .venv/bin/smc-data
 
-.PHONY: setup ready verify-prepared test lint plan-golden plan-history package
+.PHONY: setup setup-full distribution ready verify-prepared test lint plan-golden plan-history package
 
 setup:
 	$(PYTHON) -m venv .venv
 	$(VENV_PYTHON) -m pip install -e .
 	$(VENV_SMC_DATA) ready --verify
+
+setup-full: setup
+	$(VENV_SMC_DATA) install
+	$(VENV_SMC_DATA) ready --verify
+
+distribution:
+	PYTHONPATH=src $(PYTHON) -m smc_ict_data.cli distribution
 
 ready:
 	PYTHONPATH=src $(PYTHON) -m smc_ict_data.cli ready

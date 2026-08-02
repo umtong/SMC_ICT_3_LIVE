@@ -8,18 +8,19 @@ build/
 dist/
 *.egg-info/
 
-# Local acquisition/build workspaces are generated and never committed.
+# Local acquisition/build/install workspaces are generated and never committed.
 data/raw/
 data/silver/
 data/gold/
 data/quality/
 data/catalog/
+data/installed/
 *.zip
 *.parquet
 *.csv.gz
 *.duckdb
 
-# The versioned, validated default research release is intentionally committed.
+# The bounded, validated golden contract release is intentionally committed.
 !data/prepared/
 !data/prepared/**
 

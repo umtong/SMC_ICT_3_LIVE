@@ -1,0 +1,313 @@
+name: build-full-history-market-data-release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/build-full-history-release.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: full-history-market-data-v1
+  cancel-in-progress: false
+
+env:
+  RELEASE_ID: full-history-v1.0.0
+  RELEASE_TAG: market-data-full-history-v1.0.0
+  AS_OF: "2026-08-02"
+
+jobs:
+  prepare-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create draft release if absent
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "release $RELEASE_TAG already exists; assets will be checksum-replaced"
+          else
+            cat > /tmp/release-notes.md <<'EOF'
+          # Full-history prepared market data
+
+          Research-ready BTCUSDT, ETHUSDT, XRPUSDT and SOLUSDT market data.
+
+          - period: 2017-01-01 through 2026-07-31 UTC
+          - Silver: normalized 1-minute Spot trade and USD-M trade/mark/index/premium data
+          - Gold: deterministic 5m, 15m, 1h and 4h complete-bucket derivatives
+          - packaging: one independently verifiable ZIP partition per year
+          - runtime dependency: GitHub only; no Google Drive or exchange download is needed
+
+          Install through `smc-data install`; each asset and every extracted file is SHA-256 verified.
+          EOF
+            gh release create "$RELEASE_TAG" \
+              --draft \
+              --target "$GITHUB_SHA" \
+              --title "Full-history market data v1.0.0" \
+              --notes-file /tmp/release-notes.md
+          fi
+
+  build-partitions:
+    needs: prepare-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - partition: "2017"
+            start: "2017-01-01"
+            end: "2017-12-31"
+            period: "[2017-01-01, 2018-01-01)"
+          - partition: "2018"
+            start: "2018-01-01"
+            end: "2018-12-31"
+            period: "[2018-01-01, 2019-01-01)"
+          - partition: "2019"
+            start: "2019-01-01"
+            end: "2019-12-31"
+            period: "[2019-01-01, 2020-01-01)"
+          - partition: "2020"
+            start: "2020-01-01"
+            end: "2020-12-31"
+            period: "[2020-01-01, 2021-01-01)"
+          - partition: "2021"
+            start: "2021-01-01"
+            end: "2021-12-31"
+            period: "[2021-01-01, 2022-01-01)"
+          - partition: "2022"
+            start: "2022-01-01"
+            end: "2022-12-31"
+            period: "[2022-01-01, 2023-01-01)"
+          - partition: "2023"
+            start: "2023-01-01"
+            end: "2023-12-31"
+            period: "[2023-01-01, 2024-01-01)"
+          - partition: "2024"
+            start: "2024-01-01"
+            end: "2024-12-31"
+            period: "[2024-01-01, 2025-01-01)"
+          - partition: "2025"
+            start: "2025-01-01"
+            end: "2025-12-31"
+            period: "[2025-01-01, 2026-01-01)"
+          - partition: "2026"
+            start: "2026-01-01"
+            end: "2026-07-31"
+            period: "[2026-01-01, 2026-08-01)"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e .
+      - name: Plan, acquire and normalize partition
+        env:
+          PARTITION: ${{ matrix.partition }}
+          START: ${{ matrix.start }}
+          END: ${{ matrix.end }}
+        run: |
+          set -euo pipefail
+          WORK_ROOT="$RUNNER_TEMP/work-$PARTITION"
+          MANIFEST="$RUNNER_TEMP/manifest-$PARTITION.csv"
+          mkdir -p \
+            "$WORK_ROOT/01_RAW_BRONZE" \
+            "$WORK_ROOT/02_NORMALIZED_SILVER" \
+            "$WORK_ROOT/04_CATALOG_QUALITY/normalization"
+
+          smc-data plan \
+            --start "$START" \
+            --end "$END" \
+            --as-of "$AS_OF" \
+            --out "$MANIFEST"
+
+          smc-data build \
+            --manifest "$MANIFEST" \
+            --data-root "$WORK_ROOT" \
+            --raw-root "$WORK_ROOT/01_RAW_BRONZE" \
+            --silver-root "$WORK_ROOT/02_NORMALIZED_SILVER" \
+            --quality-root "$WORK_ROOT/04_CATALOG_QUALITY/normalization" \
+            --download-report "$WORK_ROOT/04_CATALOG_QUALITY/download_report.jsonl" \
+            --catalog "$WORK_ROOT/04_CATALOG_QUALITY/work_catalog.csv" \
+            --workers 8 \
+            --retries 5 \
+            --timeout 90
+      - name: Derive Gold, catalog and package partition
+        env:
+          PARTITION: ${{ matrix.partition }}
+          PERIOD: ${{ matrix.period }}
+        run: |
+          set -euo pipefail
+          WORK_ROOT="$RUNNER_TEMP/work-$PARTITION"
+          MANIFEST="$RUNNER_TEMP/manifest-$PARTITION.csv"
+          PARTITION_ROOT="$RUNNER_TEMP/partition-$PARTITION"
+          ASSET="$RUNNER_TEMP/market-data-$PARTITION-v1.0.0.zip"
+
+          python scripts/materialize_partition.py \
+            --work-root "$WORK_ROOT" \
+            --manifest "$MANIFEST" \
+            --output-root "$PARTITION_ROOT" \
+            --release-id "$RELEASE_ID" \
+            --partition-id "$PARTITION" \
+            --period-utc "$PERIOD" \
+            --repository-commit "$GITHUB_SHA"
+
+          (cd "$PARTITION_ROOT" && zip -q -r -0 "$ASSET" .)
+
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import json
+          import os
+
+          partition = os.environ["PARTITION"]
+          root = Path(os.environ["RUNNER_TEMP"]) / f"partition-{partition}"
+          asset = Path(os.environ["RUNNER_TEMP"]) / f"market-data-{partition}-v1.0.0.zip"
+          metadata = json.loads((root / "PARTITION.json").read_text(encoding="utf-8"))
+          digest = hashlib.sha256(asset.read_bytes()).hexdigest()
+          manifest = {
+              "partition_id": partition,
+              "file": asset.name,
+              "url": (
+                  "https://github.com/umtong/SMC_ICT_3_LIVE/releases/download/"
+                  f"{os.environ['RELEASE_TAG']}/{asset.name}"
+              ),
+              "bytes": asset.stat().st_size,
+              "sha256": digest,
+              "files": metadata["files"],
+              "rows": metadata["rows"],
+              "period_utc": metadata["period_utc"],
+              "catalog_sha256": metadata["catalog_sha256"],
+              "download_statuses": metadata["download_statuses"],
+          }
+          output = Path(os.environ["RUNNER_TEMP"]) / f"partition-index-{partition}.json"
+          output.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(json.dumps(manifest, indent=2, sort_keys=True))
+          PY
+      - name: Upload permanent GitHub Release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PARTITION: ${{ matrix.partition }}
+        run: |
+          set -euo pipefail
+          gh release upload "$RELEASE_TAG" \
+            "$RUNNER_TEMP/market-data-$PARTITION-v1.0.0.zip" \
+            --clobber
+      - uses: actions/upload-artifact@v4
+        with:
+          name: partition-index-${{ matrix.partition }}
+          path: ${{ runner.temp }}/partition-index-${{ matrix.partition }}.json
+          if-no-files-found: error
+          retention-days: 7
+
+  publish-index:
+    needs: build-partitions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: partition-index-*
+          path: manifests
+          merge-multiple: true
+      - name: Build and validate distribution index
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import json
+          import os
+
+          assets = [
+              json.loads(path.read_text(encoding="utf-8"))
+              for path in sorted(Path("manifests").glob("partition-index-*.json"))
+          ]
+          expected = [str(year) for year in range(2017, 2027)]
+          actual = [asset["partition_id"] for asset in assets]
+          if actual != expected:
+              raise SystemExit(f"partition index mismatch: expected={expected}, actual={actual}")
+
+          index = {
+              "schema_version": "1.0",
+              "release_id": os.environ["RELEASE_ID"],
+              "tag": os.environ["RELEASE_TAG"],
+              "repository": "umtong/SMC_ICT_3_LIVE",
+              "status": "ready",
+              "period_utc": "[2017-01-01, 2026-08-01)",
+              "symbols": ["BTCUSDT", "ETHUSDT", "XRPUSDT", "SOLUSDT"],
+              "source_datasets": [
+                  "spot/klines",
+                  "futures/um/klines",
+                  "futures/um/markPriceKlines",
+                  "futures/um/indexPriceKlines",
+                  "futures/um/premiumIndexKlines",
+              ],
+              "base_interval": "1m",
+              "timeframes": ["1m", "5m", "15m", "1h", "4h"],
+              "assets": assets,
+              "totals": {
+                  "bytes": sum(asset["bytes"] for asset in assets),
+                  "files": {
+                      "silver": sum(asset["files"]["silver"] for asset in assets),
+                      "gold": sum(asset["files"]["gold"] for asset in assets),
+                  },
+                  "rows": {
+                      "silver": sum(asset["rows"]["silver"] for asset in assets),
+                      "gold": sum(asset["rows"]["gold"] for asset in assets),
+                  },
+              },
+              "installation": {
+                  "command": "smc-data install",
+                  "destination": "data/installed/full-history-v1.0.0",
+                  "external_market_data_download_required": False,
+                  "google_drive_required": False,
+              },
+          }
+          output = Path("full-history-v1.0.0.index.json")
+          output.write_text(json.dumps(index, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          checksum = hashlib.sha256(output.read_bytes()).hexdigest()
+          Path("full-history-v1.0.0.index.json.sha256").write_text(
+              f"{checksum}  {output.name}\n", encoding="utf-8"
+          )
+          print(json.dumps(index["totals"], indent=2, sort_keys=True))
+          PY
+      - name: Verify all release assets, upload index and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release upload "$RELEASE_TAG" \
+            full-history-v1.0.0.index.json \
+            full-history-v1.0.0.index.json.sha256 \
+            --clobber
+
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+
+          payload = json.loads(
+              subprocess.check_output(
+                  ["gh", "release", "view", os.environ["RELEASE_TAG"], "--json", "assets"],
+                  text=True,
+              )
+          )
+          names = {asset["name"] for asset in payload["assets"]}
+          expected = {f"market-data-{year}-v1.0.0.zip" for year in range(2017, 2027)} | {
+              "full-history-v1.0.0.index.json",
+              "full-history-v1.0.0.index.json.sha256",
+          }
+          missing = sorted(expected - names)
+          if missing:
+              raise SystemExit(f"release assets missing before publication: {missing}")
+          print(sorted(names))
+          PY
+
+          gh release edit "$RELEASE_TAG" --draft=false --latest=false
