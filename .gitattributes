@@ -1,0 +1,2 @@
+data/prepared/**/*.csv.gz binary
+data/prepared/**/*.zip binary
