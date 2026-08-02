@@ -1,0 +1,60 @@
+name: inspect-source-anomalies
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/inspect-source-anomalies.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download and print anomalous source rows
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/source
+          curl --fail --location --silent --show-error \
+            https://data.binance.vision/data/spot/monthly/klines/ETHUSDT/1m/ETHUSDT-1m-2017-12.zip \
+            --output /tmp/source/eth.zip
+          curl --fail --location --silent --show-error \
+            https://data.binance.vision/data/spot/monthly/klines/SOLUSDT/1m/SOLUSDT-1m-2020-12.zip \
+            --output /tmp/source/sol.zip
+          unzip -q /tmp/source/eth.zip -d /tmp/source/eth
+          unzip -q /tmp/source/sol.zip -d /tmp/source/sol
+
+          python - <<'PY'
+          from pathlib import Path
+          import csv
+          import datetime as dt
+
+          cases = [
+              (next(Path('/tmp/source/eth').glob('*.csv')), 4682, 'ETHUSDT 2017-12'),
+              (next(Path('/tmp/source/sol').glob('*.csv')), 29649, 'SOLUSDT 2020-12'),
+          ]
+
+          def ts(value: str) -> str:
+              try:
+                  raw = int(value)
+              except ValueError:
+                  return 'not-int'
+              seconds = raw / 1000 if raw < 100_000_000_000_000 else raw / 1_000_000
+              return dt.datetime.fromtimestamp(seconds, tz=dt.UTC).isoformat()
+
+          for path, target, label in cases:
+              print(f'===== {label}: {path.name}; target={target} =====')
+              with path.open('r', encoding='utf-8-sig', newline='') as handle:
+                  rows = list(csv.reader(handle))
+              for number in range(target - 4, target + 5):
+                  row = rows[number - 1]
+                  print({
+                      'row': number,
+                      'columns': len(row),
+                      'raw': row,
+                      'open_iso': ts(row[0]) if row else None,
+                      'close_iso': ts(row[6]) if len(row) > 6 else None,
+                  })
+          PY
