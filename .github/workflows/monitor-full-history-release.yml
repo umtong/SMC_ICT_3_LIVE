@@ -1,0 +1,117 @@
+name: monitor-full-history-release
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/monitor-full-history-release.yml
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: market-data-full-history-v1.0.0
+    steps:
+      - name: Follow full-history publication run
+        shell: bash
+        run: |
+          set -euo pipefail
+          completed=false
+          for attempt in $(seq 1 240); do
+            payload=$(gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow build-full-history-release.yml \
+              --branch main \
+              --limit 1 \
+              --json databaseId,status,conclusion,headSha,url,createdAt)
+
+            if [[ $(jq 'length' <<<"$payload") -eq 0 ]]; then
+              echo "publication run not visible yet"
+              sleep 30
+              continue
+            fi
+
+            run_id=$(jq -r '.[0].databaseId' <<<"$payload")
+            status=$(jq -r '.[0].status' <<<"$payload")
+            conclusion=$(jq -r '.[0].conclusion // ""' <<<"$payload")
+            echo "run_id=$run_id status=$status conclusion=$conclusion"
+            jq '.[0]' <<<"$payload"
+
+            if [[ "$status" == "completed" ]]; then
+              echo "PUBLICATION_RUN_ID=$run_id" >> "$GITHUB_ENV"
+              gh run view "$run_id" --repo "$GITHUB_REPOSITORY" --json jobs,url,conclusion,status
+              if [[ "$conclusion" != "success" ]]; then
+                echo "publication failed; failed logs follow"
+                gh run view "$run_id" --repo "$GITHUB_REPOSITORY" --log-failed || true
+                exit 1
+              fi
+              completed=true
+              break
+            fi
+            sleep 30
+          done
+
+          if [[ "$completed" != "true" ]]; then
+            echo "publication did not complete within the monitor window"
+            exit 1
+          fi
+
+      - name: Verify published release and index
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json tagName,isDraft,isPrerelease,url,assets > release.json
+          cat release.json
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path('release.json').read_text())
+          if payload['isDraft']:
+              raise SystemExit('release is still draft')
+          expected = {f'market-data-{year}-v1.0.0.zip' for year in range(2017, 2027)} | {
+              'full-history-v1.0.0.index.json',
+              'full-history-v1.0.0.index.json.sha256',
+          }
+          actual = {asset['name'] for asset in payload['assets']}
+          missing = sorted(expected - actual)
+          if missing:
+              raise SystemExit(f'published release is missing assets: {missing}')
+          print({'asset_count': len(actual), 'release_url': payload['url']})
+          PY
+
+          mkdir index
+          gh release download "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir index \
+            --pattern 'full-history-v1.0.0.index.json*'
+          (cd index && sha256sum --check full-history-v1.0.0.index.json.sha256)
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          index = json.loads(Path('index/full-history-v1.0.0.index.json').read_text())
+          expected_partitions = [str(year) for year in range(2017, 2027)]
+          actual_partitions = [asset['partition_id'] for asset in index['assets']]
+          if actual_partitions != expected_partitions:
+              raise SystemExit(
+                  f'partition mismatch: expected={expected_partitions}, actual={actual_partitions}'
+              )
+          if index.get('status') != 'ready':
+              raise SystemExit(f"distribution status is not ready: {index.get('status')}")
+          print(json.dumps({
+              'release_id': index['release_id'],
+              'period_utc': index['period_utc'],
+              'totals': index['totals'],
+          }, indent=2, sort_keys=True))
+          PY
