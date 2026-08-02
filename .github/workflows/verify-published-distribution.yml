@@ -1,0 +1,277 @@
+name: verify-published-market-data-distribution
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/verify-published-distribution.yml
+  workflow_run:
+    workflows: [build-full-history-market-data-release]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: verify-full-history-market-data-v1
+  cancel-in-progress: true
+
+env:
+  RELEASE_ID: full-history-v1.0.0
+  RELEASE_TAG: market-data-full-history-v1.0.0
+  STATUS_PATH: data/distributions/full-history-v1.0.0.verified.json
+  FAILURE_PATH: data/distributions/full-history-v1.0.0.build-failure.json
+
+jobs:
+  record-build-failure:
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion != 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Record actionable build failure
+        env:
+          BUILD_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          BUILD_RUN_ID: ${{ github.event.workflow_run.id }}
+          BUILD_RUN_URL: ${{ github.event.workflow_run.html_url }}
+          BUILD_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from datetime import UTC, datetime
+          from pathlib import Path
+          import json
+          import os
+
+          payload = {
+              "schema_version": "1.0",
+              "release_id": os.environ["RELEASE_ID"],
+              "status": "build_failed",
+              "conclusion": os.environ["BUILD_CONCLUSION"],
+              "workflow_run_id": int(os.environ["BUILD_RUN_ID"]),
+              "workflow_run_url": os.environ["BUILD_RUN_URL"],
+              "head_sha": os.environ["BUILD_HEAD_SHA"],
+              "recorded_at_utc": datetime.now(UTC).isoformat(),
+          }
+          path = Path(os.environ["FAILURE_PATH"])
+          path.parent.mkdir(parents=True, exist_ok=True)
+          path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$FAILURE_PATH"
+          git commit -m "record full-history distribution build failure"
+          git push origin HEAD:main
+
+  verify-distribution:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e .
+
+      - name: Await the published immutable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          INDEX_DIR="$RUNNER_TEMP/distribution-index"
+          mkdir -p "$INDEX_DIR"
+          ready=false
+          for _ in $(seq 1 220); do
+            rm -f "$INDEX_DIR"/*
+            if gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft' 2>/dev/null | grep -qx false && \
+               gh release download "$RELEASE_TAG" \
+                 --pattern 'full-history-v1.0.0.index.json' \
+                 --pattern 'full-history-v1.0.0.index.json.sha256' \
+                 --dir "$INDEX_DIR" \
+                 --clobber >/dev/null 2>&1; then
+              ready=true
+              break
+            fi
+            sleep 30
+          done
+          test "$ready" = true
+          test -s "$INDEX_DIR/full-history-v1.0.0.index.json"
+          test -s "$INDEX_DIR/full-history-v1.0.0.index.json.sha256"
+
+      - name: Verify index and all published asset metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          INDEX_DIR="$RUNNER_TEMP/distribution-index"
+          (cd "$INDEX_DIR" && sha256sum -c full-history-v1.0.0.index.json.sha256)
+          smc-data distribution \
+            --index "$INDEX_DIR/full-history-v1.0.0.index.json" \
+            > "$RUNNER_TEMP/distribution-summary.json"
+
+          gh release view "$RELEASE_TAG" \
+            --json tagName,isDraft,assets,targetCommitish,url \
+            > "$RUNNER_TEMP/release-view.json"
+
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          import os
+
+          temp = Path(os.environ["RUNNER_TEMP"])
+          index_path = temp / "distribution-index" / "full-history-v1.0.0.index.json"
+          index = json.loads(index_path.read_text(encoding="utf-8"))
+          release = json.loads((temp / "release-view.json").read_text(encoding="utf-8"))
+
+          if release["isDraft"]:
+              raise SystemExit("full-history release is still a draft")
+          if release["tagName"] != os.environ["RELEASE_TAG"]:
+              raise SystemExit("release tag mismatch")
+          if index["release_id"] != os.environ["RELEASE_ID"]:
+              raise SystemExit("release id mismatch")
+          if index.get("status") != "ready":
+              raise SystemExit("distribution index is not ready")
+
+          indexed = {asset["file"]: asset for asset in index["assets"]}
+          expected = {f"market-data-{year}-v1.0.0.zip" for year in range(2017, 2027)}
+          if set(indexed) != expected:
+              raise SystemExit(
+                  f"index asset set mismatch: expected={sorted(expected)}, actual={sorted(indexed)}"
+              )
+
+          published = {asset["name"]: asset for asset in release["assets"]}
+          required = expected | {
+              "full-history-v1.0.0.index.json",
+              "full-history-v1.0.0.index.json.sha256",
+          }
+          missing = sorted(required - published.keys())
+          if missing:
+              raise SystemExit(f"published release assets missing: {missing}")
+
+          for name, asset in indexed.items():
+              remote = published[name]
+              if int(remote["size"]) != int(asset["bytes"]):
+                  raise SystemExit(
+                      f"published asset size mismatch for {name}: "
+                      f"index={asset['bytes']}, github={remote['size']}"
+                  )
+              digest = remote.get("digest")
+              if digest and digest != f"sha256:{asset['sha256']}":
+                  raise SystemExit(
+                      f"published asset digest mismatch for {name}: "
+                      f"index=sha256:{asset['sha256']}, github={digest}"
+                  )
+
+          attestation = {
+              "schema_version": "1.0",
+              "release_id": index["release_id"],
+              "tag": index["tag"],
+              "status": "release_metadata_verified",
+              "period_utc": index["period_utc"],
+              "asset_count": len(indexed),
+              "asset_bytes": sum(int(asset["bytes"]) for asset in indexed.values()),
+              "totals": index["totals"],
+              "index_sha256": __import__("hashlib").sha256(index_path.read_bytes()).hexdigest(),
+              "release_url": release["url"],
+              "release_target": release["targetCommitish"],
+          }
+          (temp / "release-attestation.json").write_text(
+              json.dumps(attestation, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Exercise the researcher installer and full file verification
+        run: |
+          set -euo pipefail
+          INDEX="$RUNNER_TEMP/distribution-index/full-history-v1.0.0.index.json"
+          smc-data install \
+            --index "$INDEX" \
+            --year 2017 \
+            --destination-base "$RUNNER_TEMP/installed" \
+            --cache-root "$RUNNER_TEMP/cache" \
+            --workers 2 \
+            > "$RUNNER_TEMP/install-result.json"
+          smc-data ready \
+            --root "$RUNNER_TEMP/installed" \
+            --verify \
+            > "$RUNNER_TEMP/ready-result.json"
+
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          import os
+
+          temp = Path(os.environ["RUNNER_TEMP"])
+          install = json.loads((temp / "install-result.json").read_text(encoding="utf-8"))
+          ready = json.loads((temp / "ready-result.json").read_text(encoding="utf-8"))
+          if install.get("status") != "installed":
+              raise SystemExit(f"unexpected installer status: {install.get('status')}")
+          if ready.get("verification", {}).get("status") != "verified":
+              raise SystemExit(f"installed release verification failed: {ready}")
+          if ready.get("release_id") != "full-history-v1.0.0__2017":
+              raise SystemExit(f"unexpected installed release id: {ready.get('release_id')}")
+          PY
+
+      - name: Commit the machine-verifiable completion attestation
+        env:
+          VERIFY_RUN_ID: ${{ github.run_id }}
+          VERIFY_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          VERIFIED_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from datetime import UTC, datetime
+          from pathlib import Path
+          import json
+          import os
+
+          temp = Path(os.environ["RUNNER_TEMP"])
+          attestation = json.loads((temp / "release-attestation.json").read_text(encoding="utf-8"))
+          install = json.loads((temp / "install-result.json").read_text(encoding="utf-8"))
+          ready = json.loads((temp / "ready-result.json").read_text(encoding="utf-8"))
+          attestation.update(
+              {
+                  "status": "verified_ready_for_research",
+                  "verified_at_utc": datetime.now(UTC).isoformat(),
+                  "verification_workflow_run_id": int(os.environ["VERIFY_RUN_ID"]),
+                  "verification_workflow_run_url": os.environ["VERIFY_RUN_URL"],
+                  "verified_repository_head": os.environ["VERIFIED_HEAD_SHA"],
+                  "installer_smoke_partition": "2017",
+                  "installer_result": install,
+                  "installed_release_verification": ready["verification"],
+                  "google_drive_required": False,
+                  "exchange_download_required_for_researchers": False,
+              }
+          )
+          output = Path(os.environ["RUNNER_TEMP"]) / "verified.json"
+          output.write_text(json.dumps(attestation, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
+          mkdir -p "$(dirname "$STATUS_PATH")"
+          cp "$RUNNER_TEMP/verified.json" "$STATUS_PATH"
+          rm -f "$FAILURE_PATH"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$STATUS_PATH" "$FAILURE_PATH"
+          if git diff --cached --quiet; then
+            echo "completion attestation already current"
+            exit 0
+          fi
+          git commit -m "attest full-history distribution is ready for research"
+          git push origin HEAD:main
