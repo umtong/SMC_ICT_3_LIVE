@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 import argparse
 import gzip
@@ -28,6 +29,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--partition-id", required=True)
     parser.add_argument("--period-utc", required=True)
     parser.add_argument("--repository-commit", required=True)
+    parser.add_argument("--resample-workers", type=int, default=4)
     parser.add_argument("--force", action="store_true")
     return parser.parse_args()
 
@@ -116,6 +118,52 @@ def derived_paths(
     return destination, report
 
 
+def resample_partition(
+    silver_root: Path,
+    gold_root: Path,
+    quality_root: Path,
+    *,
+    workers: int,
+    targets: tuple[str, ...] = TARGET_INTERVALS,
+) -> int:
+    if workers < 1:
+        raise ValueError("resample workers must be positive")
+
+    jobs: list[tuple[Path, str, Path, Path]] = []
+    for source in sorted(silver_root.rglob("*.csv.gz")):
+        for target in targets:
+            destination, report = derived_paths(
+                source,
+                silver_root,
+                gold_root,
+                quality_root,
+                target,
+            )
+            jobs.append((source, target, destination, report))
+
+    if not jobs:
+        return 0
+
+    def run(job: tuple[Path, str, Path, Path]) -> None:
+        source, target, destination, report = job
+        resample_file(
+            source,
+            destination,
+            report,
+            target_interval=target,
+        )
+
+    with ThreadPoolExecutor(max_workers=min(workers, len(jobs))) as executor:
+        futures = {executor.submit(run, job): job for job in jobs}
+        for future in as_completed(futures):
+            source, target, _, _ = futures[future]
+            try:
+                future.result()
+            except Exception as exc:
+                raise RuntimeError(f"failed to derive {target} from {source.as_posix()}") from exc
+    return len(jobs)
+
+
 def make_catalog_portable(catalog: Path) -> None:
     metadata_path = catalog.with_suffix(catalog.suffix + ".metadata.json")
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
@@ -160,16 +208,12 @@ def materialize(args: argparse.Namespace) -> dict[str, object]:
 
     download_counts = read_download_statuses(download_report)
     normalization_quality = summarize_normalization_quality(normalization)
-    for source in sorted(silver_root.rglob("*.csv.gz")):
-        for target in TARGET_INTERVALS:
-            destination, report = derived_paths(
-                source,
-                silver_root,
-                gold_root,
-                partition_quality,
-                target,
-            )
-            resample_file(source, destination, report, target_interval=target)
+    resample_jobs = resample_partition(
+        silver_root,
+        gold_root,
+        partition_quality,
+        workers=args.resample_workers,
+    )
 
     silver_files, silver_rows = count_csv_rows(silver_root)
     gold_files, gold_rows = count_csv_rows(gold_root)
@@ -207,6 +251,8 @@ def materialize(args: argparse.Namespace) -> dict[str, object]:
         "source_manifest_sha256": file_sha256(partition_quality / "source_manifest.csv"),
         "pipeline_version": PIPELINE_VERSION,
         "repository_commit": args.repository_commit,
+        "resample_jobs": resample_jobs,
+        "resample_workers": args.resample_workers,
         "external_runtime_dependency": False,
         "external_data_download_required_after_publication": False,
     }
