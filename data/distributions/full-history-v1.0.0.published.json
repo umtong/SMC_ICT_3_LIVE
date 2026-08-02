@@ -1,0 +1,30 @@
+{
+  "asset_count": 12,
+  "exchange_download_required_for_researchers": false,
+  "google_drive_required": false,
+  "index_sha256": "d12d190bf49f89b5125f8036281643faa6dd88a92fcb6b3cd1980f5ce0fbaaad",
+  "pipeline_version": "1.0.2",
+  "publication_workflow_run_id": 30735058452,
+  "publication_workflow_run_url": "https://github.com/umtong/SMC_ICT_3_LIVE/actions/runs/30735058452",
+  "published_at_utc": "2026-08-02T05:58:57.166923+00:00",
+  "release_id": "full-history-v1.0.0",
+  "release_target": "849251cebac7e1b8d302758061c8a401e16812b6",
+  "release_url": "https://github.com/umtong/SMC_ICT_3_LIVE/releases/tag/market-data-full-history-v1.0.0",
+  "repository_commit": "849251cebac7e1b8d302758061c8a401e16812b6",
+  "schema_version": "1.0",
+  "source_build_run_id": 30733616464,
+  "source_build_run_url": "https://github.com/umtong/SMC_ICT_3_LIVE/actions/runs/30733616464",
+  "status": "published",
+  "tag": "market-data-full-history-v1.0.0",
+  "totals": {
+    "bytes": 3349663163,
+    "files": {
+      "gold": 8876,
+      "silver": 2219
+    },
+    "rows": {
+      "gold": 20296055,
+      "silver": 70596523
+    }
+  }
+}
