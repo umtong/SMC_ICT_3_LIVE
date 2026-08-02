@@ -36,8 +36,12 @@ jobs:
 
           path = Path("tests/test_materialize_partition.py")
           text = path.read_text(encoding="utf-8")
-          old = "from scripts.materialize_partition import resample_partition\n"
-          new = """import importlib.util
+          old = (
+              "from scripts.materialize_partition import resample_partition\n"
+              "from smc_ict_data.normalization import KLINE_OUTPUT_COLUMNS\n"
+          )
+          new = """from smc_ict_data.normalization import KLINE_OUTPUT_COLUMNS
+          import importlib.util
           import sys
 
 
