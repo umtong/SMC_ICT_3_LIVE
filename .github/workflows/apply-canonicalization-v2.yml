@@ -1,0 +1,116 @@
+name: apply-canonicalization-v2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/apply-canonicalization-v2.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: full-history-market-data-v1
+  cancel-in-progress: true
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Apply reviewed integration and semantic-boundary fix
+        run: |
+          set -euo pipefail
+          awk '
+            /          python - <<.PY./ {capture=1; next}
+            capture && /^          PY$/ {exit}
+            capture {sub(/^          /, ""); print}
+          ' .github/workflows/integrate-historical-canonicalization.yml \
+            > "$RUNNER_TEMP/integrate.py"
+          test -s "$RUNNER_TEMP/integrate.py"
+          python "$RUNNER_TEMP/integrate.py"
+
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("src/smc_ict_data/canonicalize.py")
+          text = path.read_text(encoding="utf-8")
+
+          old_doc = (
+              "    A row that crosses a canonical boundary, has an impossible close timestamp,\n"
+              "    starts after a missing bucket prefix, overlaps another segment, or has an\n"
+              "    invalid payload quarantines the affected canonical bucket. It is never\n"
+              "    clamped, shifted, price-filled or silently discarded.\n"
+          )
+          new_doc = (
+              "    A row that crosses a canonical boundary, has an impossible close timestamp,\n"
+              "    starts after a missing bucket prefix, or overlaps another segment quarantines\n"
+              "    the affected canonical bucket. It is never clamped, shifted, price-filled or\n"
+              "    silently discarded. Price, OHLC and activity-field contract violations remain\n"
+              "    hard errors rather than being converted into missing observations.\n"
+          )
+          if text.count(old_doc) != 1:
+              raise SystemExit("canonicalization doc marker mismatch")
+          text = text.replace(old_doc, new_doc, 1)
+
+          old_validation = (
+              "        try:\n"
+              "            validate_row(row, line_number)\n"
+              "        except ValueError as exc:\n"
+              "            current.invalid_reasons.add(\"invalid_source_payload\")\n"
+              "            stats.record(\n"
+              "                line_number=line_number,\n"
+              "                reason=\"invalid_source_payload\",\n"
+              "                open_time_us=open_time_us,\n"
+              "                source_close_time_us=source_close_time_us,\n"
+              "                canonical_open_time_us=bucket_start_us,\n"
+              "                details=str(exc),\n"
+              "            )\n"
+          )
+          new_validation = (
+              "        try:\n"
+              "            validate_row(row, line_number)\n"
+              "        except ValueError as exc:\n"
+              "            raise SourceCanonicalizationError(\n"
+              "                f\"source payload contract violation at row {line_number}: {exc}\"\n"
+              "            ) from exc\n"
+          )
+          if text.count(old_validation) != 1:
+              raise SystemExit("canonicalization validation marker mismatch")
+          path.write_text(text.replace(old_validation, new_validation, 1), encoding="utf-8")
+          PY
+      - name: Format, lint, test and compile
+        run: |
+          set -euo pipefail
+          python -m pip install -e '.[dev]'
+          ruff format src tests scripts
+          ruff check src tests scripts
+          pytest
+          python -m compileall -q src tests scripts
+      - name: Publish validated integration
+        run: |
+          set -euo pipefail
+          rm -f \
+            .github/workflows/apply-canonicalization-v2.yml \
+            .github/workflows/apply-canonicalization-now.yml \
+            .github/workflows/integrate-historical-canonicalization.yml \
+            .github/workflows/discover-canonicalization-run.yml \
+            .github/workflows/discover-apply-run.yml \
+            .github/workflows/observe-canonicalization-integration.yml
+          rm -f data/distributions/canonicalization-apply.active-run.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Canonicalize anomalous historical klines without fabricating bars"
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
