@@ -1,0 +1,80 @@
+name: observe-canonicalization-integration
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/observe-canonicalization-integration.yml
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+env:
+  TARGET_WORKFLOW: integrate-historical-kline-canonicalization
+  STATUS_PATH: data/distributions/canonicalization-integration.latest-run.json
+
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Find and await integration run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run_id=""
+          for _ in $(seq 1 60); do
+            run_id=$(gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow "$TARGET_WORKFLOW" \
+              --limit 1 \
+              --json databaseId \
+              --jq '.[0].databaseId // empty' 2>/dev/null || true)
+            [[ -n "$run_id" ]] && break
+            sleep 10
+          done
+          [[ -n "$run_id" ]]
+          for _ in $(seq 1 120); do
+            gh run view "$run_id" \
+              --repo "$GITHUB_REPOSITORY" \
+              --json databaseId,status,conclusion,headSha,url,createdAt,updatedAt \
+              > "$RUNNER_TEMP/run.json"
+            [[ "$(jq -r '.status' "$RUNNER_TEMP/run.json")" == completed ]] && break
+            sleep 10
+          done
+          [[ "$(jq -r '.status' "$RUNNER_TEMP/run.json")" == completed ]]
+      - name: Commit integration result
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from datetime import UTC, datetime
+          from pathlib import Path
+          import json
+          import os
+
+          path = Path(os.environ["RUNNER_TEMP"]) / "run.json"
+          payload = json.loads(path.read_text(encoding="utf-8"))
+          payload.update({
+              "schema_version": "1.0",
+              "component": "historical-kline-canonicalization",
+              "observed_at_utc": datetime.now(UTC).isoformat(),
+          })
+          path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
+          mkdir -p "$(dirname "$STATUS_PATH")"
+          cp "$RUNNER_TEMP/run.json" "$STATUS_PATH"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$STATUS_PATH"
+          git commit -m "record canonicalization integration result"
+          git push origin HEAD:main
