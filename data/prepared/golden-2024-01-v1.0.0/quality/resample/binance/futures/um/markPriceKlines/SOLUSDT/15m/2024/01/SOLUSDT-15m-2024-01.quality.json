@@ -1,0 +1,13 @@
+{
+  "incomplete_buckets_dropped": 0,
+  "input_path": "data/prepared/golden-2024-01-v1.0.0/silver/binance/futures/um/markPriceKlines/SOLUSDT/1m/2024/01/SOLUSDT-1m-2024-01.csv.gz",
+  "input_sha256": "b3fc4b745134996ec6b1a9c3c8d9597b963a7ed2ce240cc3b60f89fc45635e9f",
+  "output_path": "data/prepared/golden-2024-01-v1.0.0/gold/binance/futures/um/markPriceKlines/SOLUSDT/15m/2024/01/SOLUSDT-15m-2024-01.csv.gz",
+  "output_rows": 2976,
+  "output_sha256": "08a09564be6f6d5aba8c25156548914a7f6671fa61d93c731ed14f9c6f815c28",
+  "pipeline_version": "1.0.0",
+  "source_interval": "1m",
+  "source_rows": 44640,
+  "status": "valid",
+  "target_interval": "15m"
+}

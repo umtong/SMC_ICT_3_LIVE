@@ -1,0 +1,22 @@
+{
+  "archive_id": "bca88846de289d9084d8",
+  "dataset": "klines",
+  "exact_duplicates_removed": 0,
+  "first_open_time_us": 1704067200000000,
+  "gap_count": 0,
+  "gaps": [],
+  "interval": "1m",
+  "last_open_time_us": 1706745540000000,
+  "missing_bar_count": 0,
+  "output_path": "/home/runner/work/_temp/golden-source/02_NORMALIZED_SILVER/binance/futures/um/klines/SOLUSDT/1m/2024/01/SOLUSDT-1m-2024-01.csv.gz",
+  "output_sha256": "5f04376b16a61be775f01de450a662ba0cdf15ffa70a99eb68e13501bfc92930",
+  "pipeline_version": "1.0.0",
+  "requested_end": "2024-01-31",
+  "requested_start": "2024-01-01",
+  "rows_read": 44640,
+  "rows_written": 44640,
+  "source_sha256": "7f24af8fea65040962f7fc73c8d61fb6128c583e9d6c555d6ccca96b4d50995a",
+  "source_url": "https://data.binance.vision/data/futures/um/monthly/klines/SOLUSDT/1m/SOLUSDT-1m-2024-01.zip",
+  "status": "valid",
+  "symbol": "SOLUSDT"
+}

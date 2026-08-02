@@ -1,0 +1,54 @@
+{
+  "base_interval": "1m",
+  "catalog_sha256": "6b8a74f6c2b2d36a2b820b38a6249f23c3e1b25d50f8c8a5f13b3031ca624349",
+  "default": true,
+  "external_data_download_required": false,
+  "external_runtime_dependency": false,
+  "files": {
+    "gold": 80,
+    "silver": 20
+  },
+  "generated_from_repository_commit": "8063a17d2fb2391875484ed4d9ee97587e27d7ad",
+  "paths": {
+    "catalog": "catalog.csv",
+    "gold": "gold",
+    "quality": "quality",
+    "silver": "silver"
+  },
+  "period_utc": "[2024-01-01, 2024-02-01)",
+  "pipeline_version": "1.0.0",
+  "provenance_audit_available": true,
+  "quality_policy": {
+    "availability": "available_time_us = close_time_exclusive_us",
+    "duplicates": "remove exact duplicates; reject conflicts",
+    "gaps": "report; never price-fill",
+    "higher_timeframes": "emit complete buckets only"
+  },
+  "release_id": "golden-2024-01-v1.0.0",
+  "rows": {
+    "gold": 256680,
+    "silver": 892800
+  },
+  "source_datasets": [
+    "spot/klines",
+    "futures/um/klines",
+    "futures/um/markPriceKlines",
+    "futures/um/indexPriceKlines",
+    "futures/um/premiumIndexKlines"
+  ],
+  "source_manifest_sha256": "2faee1f95f1ee4ec21a019b62f9090f1042bc22a82fbee3ec86b7db0b425f584",
+  "status": "ready",
+  "symbols": [
+    "BTCUSDT",
+    "ETHUSDT",
+    "XRPUSDT",
+    "SOLUSDT"
+  ],
+  "timeframes": [
+    "1m",
+    "5m",
+    "15m",
+    "1h",
+    "4h"
+  ]
+}

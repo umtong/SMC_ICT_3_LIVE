@@ -1,0 +1,13 @@
+{
+  "incomplete_buckets_dropped": 0,
+  "input_path": "data/prepared/golden-2024-01-v1.0.0/silver/binance/futures/um/markPriceKlines/ETHUSDT/1m/2024/01/ETHUSDT-1m-2024-01.csv.gz",
+  "input_sha256": "4bff436298012c832d109a3d485b0bc655fd35de4880319b276f5d083e34403d",
+  "output_path": "data/prepared/golden-2024-01-v1.0.0/gold/binance/futures/um/markPriceKlines/ETHUSDT/15m/2024/01/ETHUSDT-15m-2024-01.csv.gz",
+  "output_rows": 2976,
+  "output_sha256": "762c44b2c75ebe9215720741c1584d292c1838cb2dd35f31745e984493aae9db",
+  "pipeline_version": "1.0.0",
+  "source_interval": "1m",
+  "source_rows": 44640,
+  "status": "valid",
+  "target_interval": "15m"
+}
