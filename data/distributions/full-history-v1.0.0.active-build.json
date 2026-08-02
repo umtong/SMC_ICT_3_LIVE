@@ -1,0 +1,16 @@
+{
+  "conclusion": "",
+  "createdAt": "2026-08-02T05:09:27Z",
+  "databaseId": 30733616464,
+  "event": "workflow_dispatch",
+  "headBranch": "main",
+  "headSha": "849251cebac7e1b8d302758061c8a401e16812b6",
+  "name": "build-full-history-market-data-release",
+  "observed_at_utc": "2026-08-02T05:13:52.287999+00:00",
+  "release_id": "full-history-v1.0.0",
+  "schema_version": "1.0",
+  "status": "queued",
+  "updatedAt": "2026-08-02T05:10:00Z",
+  "url": "https://github.com/umtong/SMC_ICT_3_LIVE/actions/runs/30733616464",
+  "workflowName": "build-full-history-market-data-release"
+}
