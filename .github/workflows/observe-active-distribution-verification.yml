@@ -1,0 +1,66 @@
+name: observe-active-distribution-verification
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/observe-active-distribution-verification.yml
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    env:
+      VERIFY_WORKFLOW: verify-published-distribution.yml
+      STATUS_PATH: data/distributions/full-history-v1.0.0.active-verification.json
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Capture the active or most recent dispatched verification
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run list \
+            --repo "$GITHUB_REPOSITORY" \
+            --workflow "$VERIFY_WORKFLOW" \
+            --event workflow_dispatch \
+            --limit 1 \
+            --json databaseId,name,workflowName,event,status,conclusion,headSha,headBranch,createdAt,updatedAt,url \
+            --jq '.[0]' > "$RUNNER_TEMP/verification.json"
+          test -s "$RUNNER_TEMP/verification.json"
+
+          python - <<'PY'
+          from datetime import UTC, datetime
+          from pathlib import Path
+          import json
+          import os
+
+          path = Path(os.environ["RUNNER_TEMP"]) / "verification.json"
+          payload = json.loads(path.read_text(encoding="utf-8"))
+          payload.update(
+              {
+                  "schema_version": "1.0",
+                  "release_id": "full-history-v1.0.0",
+                  "observed_at_utc": datetime.now(UTC).isoformat(),
+              }
+          )
+          path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
+          mkdir -p "$(dirname "$STATUS_PATH")"
+          cp "$RUNNER_TEMP/verification.json" "$STATUS_PATH"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$STATUS_PATH"
+          git commit -m "record active distribution verification run"
+          git push origin HEAD:main
