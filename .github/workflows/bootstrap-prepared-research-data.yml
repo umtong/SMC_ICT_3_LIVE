@@ -1,0 +1,206 @@
+name: bootstrap-prepared-research-data
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: prepared-data-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'agent/preloaded-research-data'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e .
+      - name: Materialize and commit the research-ready release once
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          export RELEASE_ID=golden-2024-01-v1.0.0
+          export WORK_ROOT="$RUNNER_TEMP/golden-source"
+          export PREPARED_BASE="data/prepared"
+          export RELEASE_ROOT="$PREPARED_BASE/$RELEASE_ID"
+
+          if [[ -f "$RELEASE_ROOT/PREPARED_DATA.json" ]]; then
+            echo "prepared release already exists"
+            exit 0
+          fi
+
+          rm -rf "$WORK_ROOT" "$RELEASE_ROOT"
+          mkdir -p \
+            "$WORK_ROOT/01_RAW_BRONZE" \
+            "$WORK_ROOT/02_NORMALIZED_SILVER" \
+            "$WORK_ROOT/04_CATALOG_QUALITY/normalization"
+
+          smc-data build \
+            --manifest data/manifests/golden_2024_01.csv \
+            --data-root "$WORK_ROOT" \
+            --raw-root "$WORK_ROOT/01_RAW_BRONZE" \
+            --silver-root "$WORK_ROOT/02_NORMALIZED_SILVER" \
+            --quality-root "$WORK_ROOT/04_CATALOG_QUALITY/normalization" \
+            --download-report "$WORK_ROOT/04_CATALOG_QUALITY/download_report.jsonl" \
+            --catalog "$WORK_ROOT/04_CATALOG_QUALITY/catalog.csv"
+
+          python - <<'PY'
+          from __future__ import annotations
+
+          from pathlib import Path
+          import gzip
+          import json
+          import os
+          import shutil
+
+          from smc_ict_data.archive import file_sha256
+          from smc_ict_data.catalog import build_catalog
+          from smc_ict_data.resample import resample_file
+
+          release_id = os.environ["RELEASE_ID"]
+          work_root = Path(os.environ["WORK_ROOT"])
+          prepared_base = Path(os.environ["PREPARED_BASE"])
+          release_root = Path(os.environ["RELEASE_ROOT"])
+          silver_root = release_root / "silver"
+          gold_root = release_root / "gold"
+          quality_root = release_root / "quality"
+
+          release_root.mkdir(parents=True, exist_ok=True)
+          shutil.copytree(work_root / "02_NORMALIZED_SILVER", silver_root)
+          shutil.copytree(work_root / "04_CATALOG_QUALITY", quality_root / "source")
+          shutil.copy2(
+              "data/manifests/golden_2024_01.csv",
+              quality_root / "source_manifest.csv",
+          )
+          contracts = quality_root / "contracts"
+          contracts.mkdir(parents=True, exist_ok=True)
+          for name in ("DATA_CONTRACT.md", "BACKTEST_SEMANTICS.md"):
+              shutil.copy2(Path("docs") / name, contracts / name)
+
+          target_intervals = ("5m", "15m", "1h", "4h")
+          for source in sorted(silver_root.rglob("*.csv.gz")):
+              relative = source.relative_to(silver_root)
+              source_parts = list(relative.parts)
+              try:
+                  interval_index = source_parts.index("1m")
+              except ValueError as exc:
+                  raise RuntimeError(f"1m interval directory missing from {relative}") from exc
+
+              for target in target_intervals:
+                  target_parts = source_parts.copy()
+                  target_parts[interval_index] = target
+                  filename = target_parts[-1]
+                  if "-1m-" not in filename:
+                      raise RuntimeError(f"1m filename token missing from {relative}")
+                  target_parts[-1] = filename.replace("-1m-", f"-{target}-", 1)
+                  destination = gold_root.joinpath(*target_parts)
+                  report_name = target_parts[-1].removesuffix(".csv.gz") + ".quality.json"
+                  report = quality_root / "resample" / Path(*target_parts[:-1]) / report_name
+                  resample_file(
+                      source,
+                      destination,
+                      report,
+                      target_interval=target,
+                  )
+
+          def count_rows(root: Path) -> tuple[int, int]:
+              files = sorted(root.rglob("*.csv.gz"))
+              rows = 0
+              for path in files:
+                  with gzip.open(path, "rt", encoding="utf-8", newline="") as handle:
+                      next(handle)
+                      rows += sum(1 for _ in handle)
+              return len(files), rows
+
+          silver_files, silver_rows = count_rows(silver_root)
+          gold_files, gold_rows = count_rows(gold_root)
+          expected = {
+              "silver_files": 20,
+              "silver_rows": 892_800,
+              "gold_files": 80,
+              "gold_rows": 256_680,
+          }
+          actual = {
+              "silver_files": silver_files,
+              "silver_rows": silver_rows,
+              "gold_files": gold_files,
+              "gold_rows": gold_rows,
+          }
+          if actual != expected:
+              raise RuntimeError(f"prepared release count mismatch: expected={expected}, actual={actual}")
+
+          catalog = build_catalog(release_root, release_root / "catalog.csv")
+          source_manifest = quality_root / "source_manifest.csv"
+          metadata = {
+              "release_id": release_id,
+              "status": "ready",
+              "default": True,
+              "period_utc": "[2024-01-01, 2024-02-01)",
+              "symbols": ["BTCUSDT", "ETHUSDT", "XRPUSDT", "SOLUSDT"],
+              "source_datasets": [
+                  "spot/klines",
+                  "futures/um/klines",
+                  "futures/um/markPriceKlines",
+                  "futures/um/indexPriceKlines",
+                  "futures/um/premiumIndexKlines",
+              ],
+              "base_interval": "1m",
+              "timeframes": ["1m", *target_intervals],
+              "files": {"silver": silver_files, "gold": gold_files},
+              "rows": {"silver": silver_rows, "gold": gold_rows},
+              "paths": {
+                  "silver": "silver",
+                  "gold": "gold",
+                  "quality": "quality",
+                  "catalog": "catalog.csv",
+              },
+              "catalog_sha256": file_sha256(catalog),
+              "source_manifest_sha256": file_sha256(source_manifest),
+              "pipeline_version": "1.0.0",
+              "generated_from_repository_commit": os.environ.get("GITHUB_SHA"),
+              "external_runtime_dependency": False,
+              "external_data_download_required": False,
+              "provenance_audit_available": True,
+              "quality_policy": {
+                  "gaps": "report; never price-fill",
+                  "duplicates": "remove exact duplicates; reject conflicts",
+                  "availability": "available_time_us = close_time_exclusive_us",
+                  "higher_timeframes": "emit complete buckets only",
+              },
+          }
+          (release_root / "PREPARED_DATA.json").write_text(
+              json.dumps(metadata, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+
+          prepared_base.mkdir(parents=True, exist_ok=True)
+          (prepared_base / "CURRENT").write_text(release_id + "\n", encoding="utf-8")
+          (prepared_base / "README.md").write_text(
+              "# Prepared research data\n\n"
+              "`CURRENT` points to the validated default release committed with this repository.\n"
+              "Researchers use it directly; no Google Drive mount or upstream market-data download is required.\n\n"
+              "Run `PYTHONPATH=src python -m smc_ict_data.cli ready --verify` to verify every cataloged file.\n",
+              encoding="utf-8",
+          )
+          PY
+
+          PYTHONPATH=src python -m smc_ict_data.cli ready --verify
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/bootstrap-prepared-research-data.yml
+          git add -f data/prepared
+          git commit -m "preload validated research market data"
+          git push origin "HEAD:${{ github.head_ref }}"
