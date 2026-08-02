@@ -29,7 +29,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+          if gh release view "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "release $RELEASE_TAG already exists; assets will be checksum-replaced"
           else
             cat > /tmp/release-notes.md <<'EOF'
@@ -46,6 +47,7 @@ jobs:
           Install through `smc-data install`; each asset and every extracted file is SHA-256 verified.
           EOF
             gh release create "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
               --draft \
               --target "$GITHUB_SHA" \
               --title "Full-history market data v1.0.0" \
@@ -202,7 +204,8 @@ jobs:
           set -euo pipefail
           gh release upload "$RELEASE_TAG" \
             "$RUNNER_TEMP/market-data-$PARTITION-v1.0.0.zip" \
-            --clobber
+            --clobber \
+            --repo "$GITHUB_REPOSITORY"
       - uses: actions/upload-artifact@v4
         with:
           name: partition-index-${{ matrix.partition }}
@@ -214,6 +217,7 @@ jobs:
     needs: build-partitions
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           pattern: partition-index-*
@@ -253,7 +257,7 @@ jobs:
               "repository_commit": repository_commits[0],
               "release_id": os.environ["RELEASE_ID"],
               "tag": os.environ["RELEASE_TAG"],
-              "repository": "umtong/SMC_ICT_3_LIVE",
+              "repository": os.environ["GITHUB_REPOSITORY"],
               "status": "ready",
               "period_utc": "[2017-01-01, 2026-08-01)",
               "symbols": ["BTCUSDT", "ETHUSDT", "XRPUSDT", "SOLUSDT"],
@@ -301,7 +305,8 @@ jobs:
           gh release upload "$RELEASE_TAG" \
             full-history-v1.0.0.index.json \
             full-history-v1.0.0.index.json.sha256 \
-            --clobber
+            --clobber \
+            --repo "$GITHUB_REPOSITORY"
 
           python - <<'PY'
           import json
@@ -310,7 +315,16 @@ jobs:
 
           payload = json.loads(
               subprocess.check_output(
-                  ["gh", "release", "view", os.environ["RELEASE_TAG"], "--json", "assets"],
+                  [
+                      "gh",
+                      "release",
+                      "view",
+                      os.environ["RELEASE_TAG"],
+                      "--repo",
+                      os.environ["GITHUB_REPOSITORY"],
+                      "--json",
+                      "assets",
+                  ],
                   text=True,
               )
           )
@@ -326,6 +340,7 @@ jobs:
           PY
 
           gh release edit "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --draft=false \
             --latest=false
