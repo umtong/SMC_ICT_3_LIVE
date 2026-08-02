@@ -12,7 +12,7 @@ jobs:
   inspect:
     runs-on: ubuntu-latest
     steps:
-      - name: Download and scan anomalous source files
+      - name: Download and summarize anomalous source files
         shell: bash
         run: |
           set -euo pipefail
@@ -30,113 +30,94 @@ jobs:
           python - <<'PY'
           from collections import Counter, defaultdict
           from pathlib import Path
+          from decimal import Decimal
           import csv
-          import datetime as dt
+          import json
 
           cases = [
-              (next(Path('/tmp/source/eth').glob('*.csv')), 'ETHUSDT 2017-12'),
-              (next(Path('/tmp/source/sol').glob('*.csv')), 'SOLUSDT 2020-12'),
+              (next(Path('/tmp/source/eth').glob('*.csv')), 'ETHUSDT-2017-12'),
+              (next(Path('/tmp/source/sol').glob('*.csv')), 'SOLUSDT-2020-12'),
           ]
           minute = 60_000
 
-          def iso_ms(value: int) -> str:
-              return dt.datetime.fromtimestamp(value / 1000, tz=dt.UTC).isoformat()
-
-          def is_zero_activity(row: list[str]) -> bool:
+          def zero_activity(row: list[str]) -> bool:
               return (
-                  row[5] == '0.00000000'
-                  and row[7] == '0.00000000'
+                  Decimal(row[5]) == 0
+                  and Decimal(row[7]) == 0
                   and int(row[8]) == 0
-                  and row[9] == '0.00000000'
-                  and row[10] == '0.00000000'
+                  and Decimal(row[9]) == 0
+                  and Decimal(row[10]) == 0
               )
 
-          def is_flat(row: list[str]) -> bool:
+          def flat(row: list[str]) -> bool:
               return len(set(row[1:5])) == 1
 
-          def ranges(numbers: list[int]) -> list[tuple[int, int]]:
-              if not numbers:
+          def compact_ranges(values: list[int]) -> list[list[int]]:
+              if not values:
                   return []
-              output = []
-              start = previous = numbers[0]
-              for value in numbers[1:]:
+              result: list[list[int]] = []
+              start = previous = values[0]
+              for value in values[1:]:
                   if value != previous + 1:
-                      output.append((start, previous))
+                      result.append([start, previous])
                       start = value
                   previous = value
-              output.append((start, previous))
-              return output
+              result.append([start, previous])
+              return result
 
+          reports = []
           for path, label in cases:
               with path.open('r', encoding='utf-8-sig', newline='') as handle:
                   rows = list(csv.reader(handle))
-
-              counts = Counter()
-              anomaly_rows: dict[str, list[int]] = defaultdict(list)
+              counts = Counter(rows=len(rows))
+              locations: dict[str, list[int]] = defaultdict(list)
               floor_keys: dict[int, list[int]] = defaultdict(list)
-              opens: set[int] = set()
-              parsed = []
+
               for number, row in enumerate(rows, start=1):
                   open_ms = int(row[0])
                   close_ms = int(row[6])
-                  zero = is_zero_activity(row)
-                  flat = is_flat(row)
+                  is_zero = zero_activity(row)
+                  is_flat = flat(row)
                   aligned = open_ms % minute == 0
-                  canonical_end = open_ms + minute
-                  floor_key = open_ms // minute * minute
-                  floor_keys[floor_key].append(number)
-                  opens.add(open_ms)
-                  parsed.append((number, row, open_ms, close_ms, zero, flat, aligned))
+                  end_ms = open_ms + minute
+                  floor_keys[open_ms // minute * minute].append(number)
 
-                  counts['rows'] += 1
-                  counts['zero_activity'] += zero
-                  counts['flat'] += flat
+                  counts['zero_activity'] += int(is_zero)
+                  counts['flat'] += int(is_flat)
                   if not aligned:
+                      locations['off_grid'].append(number)
                       counts['off_grid'] += 1
-                      anomaly_rows['off_grid'].append(number)
-                      if not zero:
-                          counts['off_grid_nonzero_activity'] += 1
-                      if not flat:
-                          counts['off_grid_nonflat'] += 1
+                      counts['off_grid_zero_flat'] += int(is_zero and is_flat)
+                      counts['off_grid_nonzero'] += int(not is_zero)
+                      counts['off_grid_nonflat'] += int(not is_flat)
                   if close_ms < open_ms:
+                      locations['close_before_open'].append(number)
                       counts['close_before_open'] += 1
-                      anomaly_rows['close_before_open'].append(number)
-                      if not zero:
-                          counts['close_before_open_nonzero_activity'] += 1
-                  if close_ms > canonical_end:
+                      counts['close_before_open_zero_flat'] += int(is_zero and is_flat)
+                      counts['close_before_open_nonzero'] += int(not is_zero)
+                      counts['close_before_open_nonflat'] += int(not is_flat)
+                  if close_ms > end_ms:
+                      locations['close_after_end'].append(number)
                       counts['close_after_end'] += 1
-                      anomaly_rows['close_after_end'].append(number)
-                  if open_ms <= close_ms <= canonical_end and canonical_end - close_ms > 1:
+                      counts['close_after_end_zero_flat'] += int(is_zero and is_flat)
+                  if open_ms <= close_ms <= end_ms and end_ms - close_ms > 1:
+                      locations['in_bar_early_close'].append(number)
                       counts['in_bar_early_close'] += 1
-                      anomaly_rows['in_bar_early_close'].append(number)
 
-              duplicate_floor = {key: values for key, values in floor_keys.items() if len(values) > 1}
-              counts['duplicate_floor_keys'] = len(duplicate_floor)
-              counts['rows_in_duplicate_floor_keys'] = sum(len(values) for values in duplicate_floor.values())
+              duplicate_floor = {
+                  str(key): values for key, values in floor_keys.items() if len(values) > 1
+              }
+              report = {
+                  'file': label,
+                  'counts': dict(sorted(counts.items())),
+                  'ranges': {
+                      key: compact_ranges(values) for key, values in sorted(locations.items())
+                  },
+                  'duplicate_floor_key_count': len(duplicate_floor),
+                  'duplicate_floor_row_count': sum(len(values) for values in duplicate_floor.values()),
+                  'duplicate_floor_samples': dict(list(sorted(duplicate_floor.items()))[:10]),
+              }
+              reports.append(report)
 
-              print(f'===== {label}: {path.name} =====')
-              print('COUNTS', dict(sorted(counts.items())))
-              for kind, numbers in sorted(anomaly_rows.items()):
-                  print('RANGES', kind, ranges(numbers)[:20], 'range_count=', len(ranges(numbers)))
-                  for start, end in ranges(numbers)[:5]:
-                      for number in sorted(set(range(max(1, start - 2), min(len(rows), end + 2) + 1))):
-                          row = rows[number - 1]
-                          print({
-                              'kind': kind,
-                              'row': number,
-                              'open': row[0],
-                              'open_iso': iso_ms(int(row[0])),
-                              'close': row[6],
-                              'close_iso': iso_ms(int(row[6])),
-                              'aligned': int(row[0]) % minute == 0,
-                              'zero_activity': is_zero_activity(row),
-                              'flat': is_flat(row),
-                              'ohlc': row[1:5],
-                              'volume': row[5],
-                              'trades': row[8],
-                          })
-              if duplicate_floor:
-                  print('DUPLICATE_FLOOR_SAMPLES')
-                  for key, numbers in list(sorted(duplicate_floor.items()))[:20]:
-                      print(iso_ms(key), numbers, [rows[number - 1][0] for number in numbers])
+          print(json.dumps(reports, indent=2, sort_keys=True))
           PY
