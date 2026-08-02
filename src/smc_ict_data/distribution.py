@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from hashlib import sha256
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from urllib.parse import urlparse
