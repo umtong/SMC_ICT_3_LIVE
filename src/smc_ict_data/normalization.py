@@ -15,7 +15,7 @@ import zipfile
 from .archive import ArchiveRef, DownloadResult, file_sha256, read_manifest
 
 
-PIPELINE_VERSION = "1.0.0"
+PIPELINE_VERSION = "1.0.1"
 KLINE_OUTPUT_COLUMNS = (
     "exchange",
     "market_path",
@@ -76,6 +76,8 @@ class QualityReport:
     requested_start: str
     requested_end: str
     gaps: tuple[Gap, ...]
+    source_close_time_anomaly_count: int = 0
+    source_close_time_max_early_us: int = 0
     status: str = "valid"
     pipeline_version: str = PIPELINE_VERSION
 
@@ -186,7 +188,12 @@ def _validate_ohlc(
 
 
 def _validate_trade_fields(row: list[str], line_number: int) -> None:
-    for index, field in ((5, "base_volume"), (7, "quote_volume"), (9, "taker_buy_base"), (10, "taker_buy_quote")):
+    for index, field in (
+        (5, "base_volume"),
+        (7, "quote_volume"),
+        (9, "taker_buy_base"),
+        (10, "taker_buy_quote"),
+    ):
         if _decimal(row[index], field) < 0:
             raise DataContractError(f"negative {field} at source row {line_number}")
     try:
@@ -238,6 +245,8 @@ def normalize_kline_archive(
     duplicates = 0
     gaps: list[Gap] = []
     missing_bars = 0
+    source_close_time_anomalies = 0
+    source_close_time_max_early_us = 0
     first_open: int | None = None
     previous_open: int | None = None
     previous_fingerprint: tuple[str, ...] | None = None
@@ -262,10 +271,18 @@ def normalize_kline_archive(
                 )
             source_close_us = timestamp_to_us(raw[6])
             close_exclusive_us = open_time_us + duration_us
-            close_delta = close_exclusive_us - source_close_us
-            if not 0 <= close_delta <= 1_000:
+            if not open_time_us <= source_close_us <= close_exclusive_us:
                 raise DataContractError(
-                    f"source close time is inconsistent at row {line_number}: delta={close_delta}us"
+                    f"source close time is outside the declared interval at row {line_number}: "
+                    f"open={open_time_us}, source_close={source_close_us}, "
+                    f"close_exclusive={close_exclusive_us}"
+                )
+            close_delta = close_exclusive_us - source_close_us
+            if close_delta > 1_000:
+                source_close_time_anomalies += 1
+                source_close_time_max_early_us = max(
+                    source_close_time_max_early_us,
+                    close_delta,
                 )
             _validate_ohlc(
                 raw,
@@ -371,6 +388,8 @@ def normalize_kline_archive(
         requested_start=ref.period_start,
         requested_end=ref.period_end,
         gaps=tuple(gaps),
+        source_close_time_anomaly_count=source_close_time_anomalies,
+        source_close_time_max_early_us=source_close_time_max_early_us,
     )
     payload = asdict(report)
     quality_temporary = quality_destination.with_suffix(quality_destination.suffix + ".tmp")

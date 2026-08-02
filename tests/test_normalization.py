@@ -91,12 +91,49 @@ def test_normalization_reports_gap_and_removes_exact_duplicate(tmp_path: Path) -
     assert report.exact_duplicates_removed == 1
     assert report.gap_count == 1
     assert report.missing_bar_count == 1
+    assert report.source_close_time_anomaly_count == 0
 
     with gzip.open(output, "rt", encoding="utf-8", newline="") as handle:
         normalized = list(csv.DictReader(handle))
     assert normalized[0]["available_time_us"] == str(int(normalized[0]["open_time_us"]) + 60_000_000)
     assert normalized[0]["base_volume"] == "10"
     assert normalized[0]["source_field_5"] == "10"
+
+
+def test_historical_in_bar_source_close_is_preserved_and_reported(tmp_path: Path) -> None:
+    start = _epoch_ms()
+    historical = _row(start)
+    historical[6] = str(start + 20_809)
+    archive = tmp_path / "historical.zip"
+    _zip_rows(archive, [historical])
+    output = tmp_path / "historical.csv.gz"
+
+    report = normalize_kline_archive(
+        _ref(), archive, output, tmp_path / "historical.quality.json"
+    )
+
+    assert report.source_close_time_anomaly_count == 1
+    assert report.source_close_time_max_early_us == 39_191_000
+    with gzip.open(output, "rt", encoding="utf-8", newline="") as handle:
+        record = next(csv.DictReader(handle))
+    assert record["source_close_time_us"] == str((start + 20_809) * 1_000)
+    assert record["available_time_us"] == str(start * 1_000 + 60_000_000)
+
+
+def test_source_close_outside_declared_interval_is_rejected(tmp_path: Path) -> None:
+    start = _epoch_ms()
+    invalid = _row(start)
+    invalid[6] = str(start + 60_001)
+    archive = tmp_path / "invalid-close.zip"
+    _zip_rows(archive, [invalid])
+
+    with pytest.raises(DataContractError, match="outside the declared interval"):
+        normalize_kline_archive(
+            _ref(),
+            archive,
+            tmp_path / "invalid.csv.gz",
+            tmp_path / "invalid.quality.json",
+        )
 
 
 def test_reference_kline_does_not_mislabel_auxiliary_fields_as_volume(tmp_path: Path) -> None:
