@@ -58,10 +58,14 @@ jobs:
               "head_sha": os.environ["BUILD_HEAD_SHA"],
               "recorded_at_utc": datetime.now(UTC).isoformat(),
           }
-          path = Path(os.environ["FAILURE_PATH"])
-          path.parent.mkdir(parents=True, exist_ok=True)
-          path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          output = Path(os.environ["RUNNER_TEMP"]) / "build-failure.json"
+          output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           PY
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
+          mkdir -p "$(dirname "$FAILURE_PATH")"
+          cp "$RUNNER_TEMP/build-failure.json" "$FAILURE_PATH"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add "$FAILURE_PATH"
@@ -127,6 +131,7 @@ jobs:
 
           python - <<'PY'
           from pathlib import Path
+          import hashlib
           import json
           import os
 
@@ -183,7 +188,7 @@ jobs:
               "asset_count": len(indexed),
               "asset_bytes": sum(int(asset["bytes"]) for asset in indexed.values()),
               "totals": index["totals"],
-              "index_sha256": __import__("hashlib").sha256(index_path.read_bytes()).hexdigest(),
+              "index_sha256": hashlib.sha256(index_path.read_bytes()).hexdigest(),
               "release_url": release["url"],
               "release_target": release["targetCommitish"],
           }
@@ -265,10 +270,13 @@ jobs:
           git reset --hard origin/main
           mkdir -p "$(dirname "$STATUS_PATH")"
           cp "$RUNNER_TEMP/verified.json" "$STATUS_PATH"
-          rm -f "$FAILURE_PATH"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add "$STATUS_PATH" "$FAILURE_PATH"
+          git add "$STATUS_PATH"
+          if git ls-files --error-unmatch "$FAILURE_PATH" >/dev/null 2>&1; then
+            rm -f "$FAILURE_PATH"
+            git add -u -- "$FAILURE_PATH"
+          fi
           if git diff --cached --quiet; then
             echo "completion attestation already current"
             exit 0
