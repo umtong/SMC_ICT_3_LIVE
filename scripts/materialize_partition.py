@@ -9,6 +9,7 @@ import shutil
 
 from smc_ict_data.archive import file_sha256
 from smc_ict_data.catalog import build_catalog
+from smc_ict_data.normalization import PIPELINE_VERSION
 from smc_ict_data.resample import resample_file
 
 
@@ -53,6 +54,33 @@ def read_download_statuses(path: Path) -> Counter[str]:
     if unexpected:
         raise RuntimeError(f"partition contains rejected download statuses: {unexpected}")
     return counts
+
+
+def summarize_normalization_quality(root: Path) -> dict[str, int]:
+    totals: Counter[str] = Counter()
+    maximum_early_us = 0
+    report_count = 0
+    for path in sorted(root.rglob("*.quality.json")):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        report_count += 1
+        for field in (
+            "rows_read",
+            "rows_written",
+            "exact_duplicates_removed",
+            "gap_count",
+            "missing_bar_count",
+            "source_close_time_anomaly_count",
+        ):
+            totals[field] += int(payload.get(field, 0))
+        maximum_early_us = max(
+            maximum_early_us,
+            int(payload.get("source_close_time_max_early_us", 0)),
+        )
+    return {
+        "normalization_reports": report_count,
+        **dict(sorted(totals.items())),
+        "source_close_time_max_early_us": maximum_early_us,
+    }
 
 
 def derived_paths(
@@ -123,6 +151,7 @@ def materialize(args: argparse.Namespace) -> dict[str, object]:
         shutil.copy2(Path("docs") / name, contracts / name)
 
     download_counts = read_download_statuses(download_report)
+    normalization_quality = summarize_normalization_quality(normalization)
     for source in sorted(silver_root.rglob("*.csv.gz")):
         for target in TARGET_INTERVALS:
             destination, report = derived_paths(
@@ -165,9 +194,10 @@ def materialize(args: argparse.Namespace) -> dict[str, object]:
         "files": {"silver": silver_files, "gold": gold_files},
         "rows": {"silver": silver_rows, "gold": gold_rows},
         "download_statuses": dict(sorted(download_counts.items())),
+        "normalization_quality": normalization_quality,
         "catalog_sha256": file_sha256(catalog),
         "source_manifest_sha256": file_sha256(partition_quality / "source_manifest.csv"),
-        "pipeline_version": "1.0.0",
+        "pipeline_version": PIPELINE_VERSION,
         "repository_commit": args.repository_commit,
         "external_runtime_dependency": False,
         "external_data_download_required_after_publication": False,
