@@ -1,0 +1,63 @@
+name: materialize-golden-market-data
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  golden-2024-01:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e .
+      - name: Download, verify, normalize and catalog
+        run: |
+          set -euo pipefail
+          mkdir -p release/{01_RAW_BRONZE,02_NORMALIZED_SILVER,03_DERIVED_GOLD,04_CATALOG_QUALITY,00_README}
+          smc-data build \
+            --manifest data/manifests/golden_2024_01.csv \
+            --data-root release \
+            --raw-root release/01_RAW_BRONZE \
+            --silver-root release/02_NORMALIZED_SILVER \
+            --quality-root release/04_CATALOG_QUALITY/normalization \
+            --download-report release/04_CATALOG_QUALITY/download_report.jsonl \
+            --catalog release/04_CATALOG_QUALITY/catalog.csv
+          cp data/manifests/golden_2024_01.csv release/04_CATALOG_QUALITY/source_manifest.csv
+          cp docs/DRIVE_LAYOUT.md docs/DATA_CONTRACT.md docs/BACKTEST_SEMANTICS.md release/00_README/
+          python scripts/write_release_metadata.py \
+            --root release \
+            --manifest release/04_CATALOG_QUALITY/source_manifest.csv \
+            --catalog release/04_CATALOG_QUALITY/catalog.csv \
+            --release-id golden-2024-01-v1.0.0 \
+            --out release/RELEASE.json
+      - name: Check release is non-empty
+        run: |
+          test "$(find release/01_RAW_BRONZE -name '*.zip' | wc -l)" -eq 20
+          test "$(find release/02_NORMALIZED_SILVER -name '*.csv.gz' | wc -l)" -eq 20
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          rows = [json.loads(line) for line in Path('release/04_CATALOG_QUALITY/download_report.jsonl').read_text().splitlines()]
+          accepted = {'downloaded_verified', 'verified_existing'}
+          rejected = [r for r in rows if r['status'] not in accepted]
+          if len(rows) != 20 or rejected:
+              raise SystemExit(
+                  f"golden release requires 20 verified source objects; rows={len(rows)}, rejected={rejected}"
+              )
+          print({r['status'] for r in rows}, len(rows))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: golden-2024-01-v1.0.0
+          path: release/
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 6

@@ -1,0 +1,70 @@
+version = "1.0"
+exchange = "binance"
+quote_asset = "USDT"
+symbols = ["BTCUSDT", "ETHUSDT", "XRPUSDT", "SOLUSDT"]
+base_interval = "1m"
+# Intentionally precedes every listing. The availability resolver records 404s as
+# unavailable instead of silently inventing a listing date.
+history_start = "2017-01-01"
+# The CLI resolves this to UTC yesterday unless an explicit --end is supplied.
+history_end = "latest_complete_day"
+source_base_url = "https://data.binance.vision"
+
+[[datasets]]
+name = "spot_klines"
+market_path = "spot"
+dataset = "klines"
+kind = "kline"
+download = true
+normalize = true
+
+[[datasets]]
+name = "um_trade_klines"
+market_path = "futures/um"
+dataset = "klines"
+kind = "kline"
+download = true
+normalize = true
+
+[[datasets]]
+name = "um_mark_price_klines"
+market_path = "futures/um"
+dataset = "markPriceKlines"
+kind = "reference_kline"
+download = true
+normalize = true
+
+[[datasets]]
+name = "um_index_price_klines"
+market_path = "futures/um"
+dataset = "indexPriceKlines"
+kind = "reference_kline"
+download = true
+normalize = true
+
+[[datasets]]
+name = "um_premium_index_klines"
+market_path = "futures/um"
+dataset = "premiumIndexKlines"
+kind = "reference_kline"
+download = true
+normalize = true
+
+# Optional high-volume layers. They are deliberately off by default and never
+# spliced into bar data. Enable per study after storage and execution requirements
+# have been declared.
+[[datasets]]
+name = "spot_agg_trades"
+market_path = "spot"
+dataset = "aggTrades"
+kind = "event"
+download = false
+normalize = false
+
+[[datasets]]
+name = "um_agg_trades"
+market_path = "futures/um"
+dataset = "aggTrades"
+kind = "event"
+download = false
+normalize = false

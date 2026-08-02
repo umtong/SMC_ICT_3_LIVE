@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Source manifest row",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "archive_id", "exchange", "market_path", "dataset_name", "dataset", "kind",
+    "symbol", "interval", "period", "period_start", "period_end", "url",
+    "checksum_url", "relative_path", "plan_status"
+  ],
+  "properties": {
+    "archive_id": {"type": "string", "pattern": "^[0-9a-f]{20}$"},
+    "exchange": {"type": "string"},
+    "market_path": {"type": "string"},
+    "dataset_name": {"type": "string"},
+    "dataset": {"type": "string"},
+    "kind": {"type": "string"},
+    "symbol": {"type": "string"},
+    "interval": {"type": "string"},
+    "period": {"type": "string", "enum": ["daily", "monthly"]},
+    "period_start": {"type": "string", "format": "date"},
+    "period_end": {"type": "string", "format": "date"},
+    "url": {"type": "string", "format": "uri"},
+    "checksum_url": {"type": "string", "format": "uri"},
+    "relative_path": {"type": "string"},
+    "plan_status": {"type": "string", "const": "candidate_unverified"}
+  }
+}

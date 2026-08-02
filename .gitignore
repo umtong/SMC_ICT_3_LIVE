@@ -1,0 +1,29 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+build/
+dist/
+*.egg-info/
+
+# Bulk data belongs in Google Drive/object storage, never Git.
+data/raw/
+data/silver/
+data/gold/
+data/quality/
+data/catalog/
+*.zip
+*.parquet
+*.csv.gz
+*.duckdb
+
+# Keep reproducibility metadata.
+!data/manifests/
+!data/manifests/*.csv
+!data/manifests/*.json
+!data/manifests/*.jsonl
+
+# Full-history candidate manifests are generated release artifacts.
+data/manifests/full_history_candidates_*.csv
