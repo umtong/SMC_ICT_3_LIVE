@@ -34,7 +34,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          dispatched_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           gh workflow run "$WORKFLOW_FILE" --repo "$GITHUB_REPOSITORY" --ref main
 
           run_id=""
@@ -44,10 +43,9 @@ jobs:
                 --repo "$GITHUB_REPOSITORY" \
                 --workflow "$WORKFLOW_FILE" \
                 --event workflow_dispatch \
-                --limit 10 \
-                --json databaseId,createdAt \
-                --jq --arg dispatched_at "$dispatched_at" \
-                  '[.[] | select(.createdAt >= $dispatched_at)] | sort_by(.createdAt) | last | .databaseId // empty'
+                --limit 1 \
+                --json databaseId \
+                --jq '.[0].databaseId // empty'
             )"
             [[ -n "$run_id" ]] && break
             sleep 5
