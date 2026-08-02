@@ -1,0 +1,132 @@
+name: observe-full-history-publication
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/observe-full-history-run.yml
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+env:
+  WORKFLOW_FILE: build-full-history-release.yml
+  FAILED_HEAD: 77b5d71531608d9078bddbeac2efd9b372e7f720
+  STATUS_PATH: data/distributions/full-history-v1.0.0.latest-run.json
+
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Find the corrected publication run
+        id: discover
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 120); do
+            run=$(gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow "$WORKFLOW_FILE" \
+              --limit 10 \
+              --json databaseId,status,conclusion,headSha,url,createdAt,updatedAt \
+              --jq "map(select(.headSha != env.FAILED_HEAD)) | sort_by(.createdAt) | reverse | .[0] // empty")
+            if [[ -n "$run" ]]; then
+              printf '%s\n' "$run" > "$RUNNER_TEMP/run.json"
+              run_id=$(jq -r '.databaseId' "$RUNNER_TEMP/run.json")
+              echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+              break
+            fi
+            sleep 30
+          done
+          test -s "$RUNNER_TEMP/run.json"
+
+      - name: Record discovered run
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from datetime import UTC, datetime
+          from pathlib import Path
+          import json
+          import os
+
+          path = Path(os.environ["RUNNER_TEMP"]) / "run.json"
+          payload = json.loads(path.read_text(encoding="utf-8"))
+          payload.update({
+              "schema_version": "1.0",
+              "release_id": "full-history-v1.0.0",
+              "observed_at_utc": datetime.now(UTC).isoformat(),
+              "observation_status": "publication_run_discovered",
+          })
+          path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
+          mkdir -p "$(dirname "$STATUS_PATH")"
+          cp "$RUNNER_TEMP/run.json" "$STATUS_PATH"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$STATUS_PATH"
+          git commit -m "record active full-history publication run"
+          git push origin HEAD:main
+
+      - name: Await publication completion
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.discover.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 220); do
+            gh run view "$RUN_ID" \
+              --repo "$GITHUB_REPOSITORY" \
+              --json databaseId,status,conclusion,headSha,url,createdAt,updatedAt \
+              > "$RUNNER_TEMP/run.json"
+            status=$(jq -r '.status' "$RUNNER_TEMP/run.json")
+            if [[ "$status" == "completed" ]]; then
+              exit 0
+            fi
+            sleep 30
+          done
+          echo "publication run did not complete within observer timeout" >&2
+          exit 1
+
+      - name: Record final publication result
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from datetime import UTC, datetime
+          from pathlib import Path
+          import json
+          import os
+
+          path = Path(os.environ["RUNNER_TEMP"]) / "run.json"
+          payload = json.loads(path.read_text(encoding="utf-8"))
+          payload.update({
+              "schema_version": "1.0",
+              "release_id": "full-history-v1.0.0",
+              "observed_at_utc": datetime.now(UTC).isoformat(),
+              "observation_status": "publication_run_completed",
+          })
+          path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
+          mkdir -p "$(dirname "$STATUS_PATH")"
+          cp "$RUNNER_TEMP/run.json" "$STATUS_PATH"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$STATUS_PATH"
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "record final full-history publication result"
+          git push origin HEAD:main
