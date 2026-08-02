@@ -1,0 +1,48 @@
+name: discover-explicit-import-pipeline-run
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/discover-finalize-run-v4.yml
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Record the latest explicit-import validation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 60); do
+            gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow finalize-full-history-pipeline.yml \
+              --limit 10 \
+              --json databaseId,status,conclusion,headSha,url,createdAt,updatedAt,event \
+              --jq 'map(select(.headSha == "53603ff5b4779e4c561e3ba0f363c83b7899a2df")) | .[0] // empty' \
+              > "$RUNNER_TEMP/run.json" || true
+            [[ -s "$RUNNER_TEMP/run.json" ]] && break
+            sleep 5
+          done
+          [[ -s "$RUNNER_TEMP/run.json" ]]
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
+          mkdir -p data/distributions
+          cp "$RUNNER_TEMP/run.json" data/distributions/finalize-pipeline.active-run.json
+          rm .github/workflows/discover-finalize-run-v4.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "record explicit-import pipeline validation"
+          git push origin HEAD:main
