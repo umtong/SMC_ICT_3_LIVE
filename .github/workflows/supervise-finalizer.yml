@@ -1,0 +1,109 @@
+name: supervise-final-history-pipeline-finalizer
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/supervise-finalizer.yml
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+
+concurrency:
+  group: supervise-final-history-pipeline-finalizer
+  cancel-in-progress: true
+
+jobs:
+  supervise:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      WORKFLOW_FILE: finalize-full-history-pipeline.yml
+      STATUS_PATH: data/distributions/finalize-pipeline.supervised.json
+      LOG_PATH: data/distributions/finalize-pipeline.supervised.log.txt
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Dispatch and watch the finalizer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          dispatched_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh workflow run "$WORKFLOW_FILE" --repo "$GITHUB_REPOSITORY" --ref main
+
+          run_id=""
+          for _ in $(seq 1 60); do
+            run_id="$(
+              gh run list \
+                --repo "$GITHUB_REPOSITORY" \
+                --workflow "$WORKFLOW_FILE" \
+                --event workflow_dispatch \
+                --limit 10 \
+                --json databaseId,createdAt \
+                --jq --arg dispatched_at "$dispatched_at" \
+                  '[.[] | select(.createdAt >= $dispatched_at)] | sort_by(.createdAt) | last | .databaseId // empty'
+            )"
+            [[ -n "$run_id" ]] && break
+            sleep 5
+          done
+          [[ -n "$run_id" ]]
+          echo "RUN_ID=$run_id" >> "$GITHUB_ENV"
+
+          set +e
+          gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status
+          watch_status=$?
+          set -e
+          echo "WATCH_STATUS=$watch_status" >> "$GITHUB_ENV"
+
+          gh run view "$run_id" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json databaseId,name,workflowName,event,status,conclusion,headSha,headBranch,createdAt,updatedAt,url,jobs \
+            > "$RUNNER_TEMP/finalizer-run.json"
+          gh run view "$run_id" \
+            --repo "$GITHUB_REPOSITORY" \
+            --log-failed \
+            > "$RUNNER_TEMP/finalizer-run.log" 2>&1 || true
+
+      - name: Record result on current main and retire supervisor
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
+
+          mkdir -p "$(dirname "$STATUS_PATH")"
+          python - <<'PY'
+          from datetime import UTC, datetime
+          from pathlib import Path
+          import json
+          import os
+
+          source = Path(os.environ["RUNNER_TEMP"]) / "finalizer-run.json"
+          payload = json.loads(source.read_text(encoding="utf-8"))
+          payload.update(
+              {
+                  "schema_version": "1.0",
+                  "component": "full-history-pipeline-finalizer",
+                  "observed_at_utc": datetime.now(UTC).isoformat(),
+                  "watch_exit_status": int(os.environ["WATCH_STATUS"]),
+              }
+          )
+          Path(os.environ["STATUS_PATH"]).write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          cp "$RUNNER_TEMP/finalizer-run.log" "$LOG_PATH"
+          rm -f .github/workflows/supervise-finalizer.yml
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$STATUS_PATH" "$LOG_PATH" .github/workflows/supervise-finalizer.yml
+          git commit -m "record supervised final pipeline validation"
+          git push origin HEAD:main
