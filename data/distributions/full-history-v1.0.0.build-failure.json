@@ -1,0 +1,10 @@
+{
+  "conclusion": "cancelled",
+  "head_sha": "77b5d71531608d9078bddbeac2efd9b372e7f720",
+  "recorded_at_utc": "2026-08-02T03:43:40.145739+00:00",
+  "release_id": "full-history-v1.0.0",
+  "schema_version": "1.0",
+  "status": "build_failed",
+  "workflow_run_id": 30730444339,
+  "workflow_run_url": "https://github.com/umtong/SMC_ICT_3_LIVE/actions/runs/30730444339"
+}
