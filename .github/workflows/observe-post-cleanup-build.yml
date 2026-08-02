@@ -1,0 +1,56 @@
+name: observe-post-cleanup-full-history-build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/observe-post-cleanup-build.yml
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    env:
+      TARGET_SHA: "9b36af926673ccf1316867ad5e5065ac0fac7cb0"
+      BUILD_WORKFLOW: build-full-history-release.yml
+      STATUS_PATH: data/distributions/post-cleanup-build-observation.json
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Capture matching full-history build runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run list \
+            --repo "$GITHUB_REPOSITORY" \
+            --workflow "$BUILD_WORKFLOW" \
+            --branch main \
+            --limit 20 \
+            --json databaseId,name,workflowName,event,status,conclusion,headSha,headBranch,createdAt,updatedAt,url \
+            --jq --arg target "$TARGET_SHA" '[.[] | select(.headSha == $target)]' \
+            > "$RUNNER_TEMP/observation.json"
+          test -s "$RUNNER_TEMP/observation.json"
+          cat "$RUNNER_TEMP/observation.json"
+      - name: Commit observation
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
+          mkdir -p "$(dirname "$STATUS_PATH")"
+          cp "$RUNNER_TEMP/observation.json" "$STATUS_PATH"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$STATUS_PATH"
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "record post-cleanup build observation"
+          git push origin HEAD:main
