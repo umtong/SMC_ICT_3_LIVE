@@ -1,0 +1,148 @@
+{
+  "archive_sha256_verified": true,
+  "asset_bytes": 3349663163,
+  "asset_count": 10,
+  "exchange_download_required_for_researchers": false,
+  "extracted_file_sha256_verified": true,
+  "full_file_checksum_verification": true,
+  "google_drive_required": false,
+  "index_sha256": "d12d190bf49f89b5125f8036281643faa6dd88a92fcb6b3cd1980f5ce0fbaaad",
+  "partition_verification_mode": "all_years_isolated",
+  "partition_verifications": {
+    "2017": {
+      "asset_file": "market-data-2017-v1.0.0.zip",
+      "asset_sha256": "42ebff142aa8bc6176096c2734510df325b33d2b7591b3705c1fa62eef6c1aca",
+      "catalog_sha256": "64eb40592095a5f4d0cedf02bb439d1828d65367514ee2182c6fb577c3e8b124",
+      "cataloged_bytes_checked": 20700431,
+      "cataloged_files_checked": 107,
+      "gold_files": 40,
+      "silver_files": 10
+    },
+    "2018": {
+      "asset_file": "market-data-2018-v1.0.0.zip",
+      "asset_sha256": "8e482421dd457207883fb04f8582f7547883fe6cd89370a46f619f2ccd13f8ba",
+      "catalog_sha256": "9dba2c34411c88dc6e1310af5e0fe5ab283585ff14c2b2cd06709e4c9f708341",
+      "cataloged_bytes_checked": 95054144,
+      "cataloged_files_checked": 327,
+      "gold_files": 128,
+      "silver_files": 32
+    },
+    "2019": {
+      "asset_file": "market-data-2019-v1.0.0.zip",
+      "asset_sha256": "db33b2c4d044f619bf845c981101f6d025e40642699e0ba6b94a7c902abd1fd4",
+      "catalog_sha256": "f554e7b7a59f448e8d5bde64586e16ba06e71107f32ffaab29e3c596473ee189",
+      "cataloged_bytes_checked": 105894909,
+      "cataloged_files_checked": 367,
+      "gold_files": 144,
+      "silver_files": 36
+    },
+    "2020": {
+      "asset_file": "market-data-2020-v1.0.0.zip",
+      "asset_sha256": "e352908821715061a5058f33a45e6f00289e72d2361bd4ddd9b695bc37643427",
+      "catalog_sha256": "81572b83693425cd1b7a2486f72b578ee738a9fbb8fe1e9f91d6af46eacd169c",
+      "cataloged_bytes_checked": 390324117,
+      "cataloged_files_checked": 2017,
+      "gold_files": 804,
+      "silver_files": 201
+    },
+    "2021": {
+      "asset_file": "market-data-2021-v1.0.0.zip",
+      "asset_sha256": "e9d1c1481a765573f7e14660895e70b22ed16dfeb82ffa88a8e1449feec12375",
+      "catalog_sha256": "1403731b2f79bb20d769dc1d96e47bdab83c599eda24152a46aecccfc61c23ab",
+      "cataloged_bytes_checked": 511963842,
+      "cataloged_files_checked": 2407,
+      "gold_files": 960,
+      "silver_files": 240
+    },
+    "2022": {
+      "asset_file": "market-data-2022-v1.0.0.zip",
+      "asset_sha256": "63c7958abfd1d2ea42d75cdf20485219f9096b837f0b4ea7a2b4014f0ce01b41",
+      "catalog_sha256": "2b051db287f01e1f0dbadf6de95fedecd21d223ae6691822e71b6f36045636ad",
+      "cataloged_bytes_checked": 487034684,
+      "cataloged_files_checked": 2407,
+      "gold_files": 960,
+      "silver_files": 240
+    },
+    "2023": {
+      "asset_file": "market-data-2023-v1.0.0.zip",
+      "asset_sha256": "38a7d53edf7f87d3e78e617ae7ac94bd7c90f833a33ebe4c576cbb4bbf8b1acf",
+      "catalog_sha256": "a251864e869b1079b46049fe401039694ebc5a04c255a54951f85d716c793bcc",
+      "cataloged_bytes_checked": 467591800,
+      "cataloged_files_checked": 2407,
+      "gold_files": 960,
+      "silver_files": 240
+    },
+    "2024": {
+      "asset_file": "market-data-2024-v1.0.0.zip",
+      "asset_sha256": "54671a1ff13f48fa94ec6df79051e435920cd4ee0b88ce5c2ff45176bac0bc22",
+      "catalog_sha256": "2a027b4ae309dbb7389701121d5413b8d1eba17a6b1cf910af8853bcaad6fe53",
+      "cataloged_bytes_checked": 485801289,
+      "cataloged_files_checked": 2407,
+      "gold_files": 960,
+      "silver_files": 240
+    },
+    "2025": {
+      "asset_file": "market-data-2025-v1.0.0.zip",
+      "asset_sha256": "9298d5e953825461cd62b2ed46ff09f351af8ca7c6be932dc182ff123ce8e2b7",
+      "catalog_sha256": "6f7641cc589c8d4846d19663494d3a8369e285717765abf106cc1e1373286a06",
+      "cataloged_bytes_checked": 487785697,
+      "cataloged_files_checked": 2407,
+      "gold_files": 960,
+      "silver_files": 240
+    },
+    "2026": {
+      "asset_file": "market-data-2026-v1.0.0.zip",
+      "asset_sha256": "8588fbf32c515d6a27306cd1845978381d98b04f27a0aaf4230d243fd7283f56",
+      "catalog_sha256": "2df23a040fac7bf5830efcfc6aaf7496c9a8e97b90c6b6dfb0a5c430a628cd61",
+      "cataloged_bytes_checked": 284988450,
+      "cataloged_files_checked": 7407,
+      "gold_files": 2960,
+      "silver_files": 740
+    }
+  },
+  "period_utc": "[2017-01-01, 2026-08-01)",
+  "pipeline_version": "1.0.2",
+  "release_id": "full-history-v1.0.0",
+  "release_target": "849251cebac7e1b8d302758061c8a401e16812b6",
+  "release_url": "https://github.com/umtong/SMC_ICT_3_LIVE/releases/tag/market-data-full-history-v1.0.0",
+  "repository_commit": "849251cebac7e1b8d302758061c8a401e16812b6",
+  "schema_version": "1.0",
+  "status": "verified_ready_for_research",
+  "tag": "market-data-full-history-v1.0.0",
+  "totals": {
+    "bytes": 3349663163,
+    "files": {
+      "gold": 8876,
+      "silver": 2219
+    },
+    "rows": {
+      "gold": 20296055,
+      "silver": 70596523
+    }
+  },
+  "verification_summary": {
+    "archive_assets_verified": 10,
+    "cataloged_bytes_checked": 3337139363,
+    "cataloged_files_checked": 22260,
+    "catalogs_verified": 10,
+    "gold_files": 8876,
+    "partition_count": 10,
+    "silver_files": 2219
+  },
+  "verification_workflow_run_id": 30735111940,
+  "verification_workflow_run_url": "https://github.com/umtong/SMC_ICT_3_LIVE/actions/runs/30735111940",
+  "verified_at_utc": "2026-08-02T06:03:05.913438+00:00",
+  "verified_partitions": [
+    "2017",
+    "2018",
+    "2019",
+    "2020",
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025",
+    "2026"
+  ],
+  "verified_repository_head": "849251cebac7e1b8d302758061c8a401e16812b6"
+}
