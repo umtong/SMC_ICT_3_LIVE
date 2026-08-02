@@ -13,6 +13,7 @@ from .archive import download_manifest, plan_archives, write_manifest
 from .catalog import build_catalog
 from .model import load_config, parse_date, resolve_history_end
 from .normalization import normalize_manifest
+from .prepared import load_prepared_release, verify_prepared_release
 from .resample import resample_file
 
 
@@ -145,6 +146,15 @@ def command_catalog(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_ready(args: argparse.Namespace) -> int:
+    prepared = load_prepared_release(args.root)
+    payload = prepared.summary()
+    if args.verify:
+        payload["verification"] = verify_prepared_release(prepared)
+    _emit(payload)
+    return 0
+
+
 def command_doctor(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     optional: dict[str, bool] = {}
@@ -154,6 +164,19 @@ def command_doctor(args: argparse.Namespace) -> int:
             optional[package] = True
         except ImportError:
             optional[package] = False
+
+    try:
+        prepared = load_prepared_release(args.prepared_root)
+        prepared_status: dict[str, object] = {
+            "status": "ready",
+            "release_id": prepared.release_id,
+            "root": prepared.root.as_posix(),
+            "files": prepared.metadata.get("files", {}),
+            "rows": prepared.metadata.get("rows", {}),
+        }
+    except (OSError, ValueError) as exc:
+        prepared_status = {"status": "missing_or_invalid", "error": str(exc)}
+
     _emit(
         {
             "status": "ok",
@@ -161,8 +184,9 @@ def command_doctor(args: argparse.Namespace) -> int:
             "config_version": config.version,
             "symbols": list(config.symbols),
             "enabled_datasets": [item.name for item in config.enabled_datasets],
+            "prepared_research_data": prepared_status,
             "optional_packages": optional,
-            "note": "optional packages are not required for planning, downloading, validation or CSV.gz builds",
+            "note": "the default research dataset is committed in Git; network acquisition is for provenance audits and new releases only",
         }
     )
     return 0
@@ -174,6 +198,18 @@ def build_parser() -> argparse.ArgumentParser:
         description="Reproducible Binance market-data pipeline for SMC/ICT research",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    ready = subparsers.add_parser(
+        "ready",
+        help="locate and optionally checksum-verify the research-ready dataset committed in Git",
+    )
+    ready.add_argument(
+        "--root",
+        type=Path,
+        help="data/prepared or a specific prepared release; defaults to the current checkout",
+    )
+    ready.add_argument("--verify", action="store_true", help="verify every cataloged file")
+    ready.set_defaults(handler=command_ready)
 
     plan = subparsers.add_parser("plan", help="write deterministic candidate archive manifest")
     plan.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
@@ -226,8 +262,13 @@ def build_parser() -> argparse.ArgumentParser:
     catalog.add_argument("--out", type=Path, required=True)
     catalog.set_defaults(handler=command_catalog)
 
-    doctor = subparsers.add_parser("doctor", help="check configuration and optional tooling")
+    doctor = subparsers.add_parser("doctor", help="check configuration and prepared data")
     doctor.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    doctor.add_argument(
+        "--prepared-root",
+        type=Path,
+        help="override data/prepared location for the readiness check",
+    )
     doctor.set_defaults(handler=command_doctor)
     return parser
 
