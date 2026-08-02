@@ -61,6 +61,7 @@ jobs:
           output = Path(os.environ["RUNNER_TEMP"]) / "build-failure.json"
           output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           PY
+
           git fetch origin main
           git checkout main
           git reset --hard origin/main
@@ -69,10 +70,13 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add "$FAILURE_PATH"
+          if git diff --cached --quiet; then
+            exit 0
+          fi
           git commit -m "record full-history distribution build failure"
           git push origin HEAD:main
 
-  verify-distribution:
+  verify-release-metadata:
     if: >-
       github.event_name != 'workflow_run' ||
       github.event.workflow_run.conclusion == 'success'
@@ -82,7 +86,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: main
-          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -97,7 +100,7 @@ jobs:
           INDEX_DIR="$RUNNER_TEMP/distribution-index"
           mkdir -p "$INDEX_DIR"
           ready=false
-          for _ in $(seq 1 220); do
+          for _ in $(seq 1 240); do
             rm -f "$INDEX_DIR"/*
             if gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft' 2>/dev/null | grep -qx false && \
                gh release download "$RELEASE_TAG" \
@@ -114,7 +117,7 @@ jobs:
           test -s "$INDEX_DIR/full-history-v1.0.0.index.json"
           test -s "$INDEX_DIR/full-history-v1.0.0.index.json.sha256"
 
-      - name: Verify index and all published asset metadata
+      - name: Verify index and every published asset digest
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -148,6 +151,15 @@ jobs:
               raise SystemExit("release id mismatch")
           if index.get("status") != "ready":
               raise SystemExit("distribution index is not ready")
+          if not index.get("pipeline_version"):
+              raise SystemExit("distribution index lacks pipeline version")
+          if not index.get("repository_commit"):
+              raise SystemExit("distribution index lacks repository commit")
+          if release["targetCommitish"] != index["repository_commit"]:
+              raise SystemExit(
+                  f"release target mismatch: release={release['targetCommitish']}, "
+                  f"index={index['repository_commit']}"
+              )
 
           indexed = {asset["file"]: asset for asset in index["assets"]}
           expected = {f"market-data-{year}-v1.0.0.zip" for year in range(2017, 2027)}
@@ -166,6 +178,10 @@ jobs:
               raise SystemExit(f"published release assets missing: {missing}")
 
           for name, asset in indexed.items():
+              if asset["pipeline_version"] != index["pipeline_version"]:
+                  raise SystemExit(f"pipeline version mismatch in {name}")
+              if asset["repository_commit"] != index["repository_commit"]:
+                  raise SystemExit(f"repository commit mismatch in {name}")
               remote = published[name]
               if int(remote["size"]) != int(asset["bytes"]):
                   raise SystemExit(
@@ -185,6 +201,8 @@ jobs:
               "tag": index["tag"],
               "status": "release_metadata_verified",
               "period_utc": index["period_utc"],
+              "pipeline_version": index["pipeline_version"],
+              "repository_commit": index["repository_commit"],
               "asset_count": len(indexed),
               "asset_bytes": sum(int(asset["bytes"]) for asset in indexed.values()),
               "totals": index["totals"],
@@ -198,13 +216,55 @@ jobs:
           )
           PY
 
-      - name: Exercise the researcher installer and full file verification
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-attestation
+          path: ${{ runner.temp }}/release-attestation.json
+          if-no-files-found: error
+          retention-days: 7
+
+  verify-partition:
+    needs: verify-release-metadata
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        year: ["2017", "2018", "2019", "2020", "2021", "2022", "2023", "2024", "2025", "2026"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e .
+
+      - name: Download and verify the immutable index
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          INDEX_DIR="$RUNNER_TEMP/distribution-index"
+          mkdir -p "$INDEX_DIR"
+          gh release download "$RELEASE_TAG" \
+            --pattern 'full-history-v1.0.0.index.json' \
+            --pattern 'full-history-v1.0.0.index.json.sha256' \
+            --dir "$INDEX_DIR" \
+            --clobber
+          (cd "$INDEX_DIR" && sha256sum -c full-history-v1.0.0.index.json.sha256)
+
+      - name: Install and verify every extracted file in the annual partition
+        env:
+          YEAR: ${{ matrix.year }}
         run: |
           set -euo pipefail
           INDEX="$RUNNER_TEMP/distribution-index/full-history-v1.0.0.index.json"
           smc-data install \
             --index "$INDEX" \
-            --year 2017 \
+            --year "$YEAR" \
             --destination-base "$RUNNER_TEMP/installed" \
             --cache-root "$RUNNER_TEMP/cache" \
             --workers 2 \
@@ -215,26 +275,84 @@ jobs:
             > "$RUNNER_TEMP/ready-result.json"
 
           python - <<'PY'
+          from datetime import UTC, datetime
           from pathlib import Path
+          import hashlib
           import json
           import os
 
           temp = Path(os.environ["RUNNER_TEMP"])
+          year = os.environ["YEAR"]
+          index_path = temp / "distribution-index" / "full-history-v1.0.0.index.json"
+          index = json.loads(index_path.read_text(encoding="utf-8"))
           install = json.loads((temp / "install-result.json").read_text(encoding="utf-8"))
           ready = json.loads((temp / "ready-result.json").read_text(encoding="utf-8"))
-          if install.get("status") != "installed":
-              raise SystemExit(f"unexpected installer status: {install.get('status')}")
-          if ready.get("verification", {}).get("status") != "verified":
-              raise SystemExit(f"installed release verification failed: {ready}")
-          if ready.get("release_id") != "full-history-v1.0.0__2017":
-              raise SystemExit(f"unexpected installed release id: {ready.get('release_id')}")
+          expected_release_id = f"full-history-v1.0.0__{year}"
+
+          if install.get("status") not in {"installed", "already_installed"}:
+              raise SystemExit(f"unexpected installer status for {year}: {install.get('status')}")
+          if ready.get("release_id") != expected_release_id:
+              raise SystemExit(
+                  f"unexpected installed release id for {year}: {ready.get('release_id')}"
+              )
+          verification = ready.get("verification", {})
+          if verification.get("status") != "verified":
+              raise SystemExit(f"installed release verification failed for {year}: {ready}")
+          if int(verification.get("cataloged_files_checked", 0)) <= 0:
+              raise SystemExit(f"no cataloged files were checked for {year}")
+
+          asset = next(item for item in index["assets"] if item["partition_id"] == year)
+          payload = {
+              "schema_version": "1.0",
+              "status": "verified",
+              "partition_id": year,
+              "asset_file": asset["file"],
+              "asset_bytes": int(asset["bytes"]),
+              "asset_sha256": asset["sha256"],
+              "asset_catalog_sha256": asset["catalog_sha256"],
+              "index_sha256": hashlib.sha256(index_path.read_bytes()).hexdigest(),
+              "release_id": ready["release_id"],
+              "verification": verification,
+              "verified_at_utc": datetime.now(UTC).isoformat(),
+              "workflow_run_id": int(os.environ["GITHUB_RUN_ID"]),
+              "workflow_run_url": (
+                  f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/"
+                  f"{os.environ['GITHUB_RUN_ID']}"
+              ),
+          }
+          output = temp / f"partition-verification-{year}.json"
+          output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           PY
 
-      - name: Commit the machine-verifiable completion attestation
+      - uses: actions/upload-artifact@v4
+        with:
+          name: partition-verification-${{ matrix.year }}
+          path: ${{ runner.temp }}/partition-verification-${{ matrix.year }}.json
+          if-no-files-found: error
+          retention-days: 7
+
+  attest-complete-distribution:
+    needs: [verify-release-metadata, verify-partition]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: partition-verification-*
+          path: partition-verifications
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-attestation
+          path: release-attestation
+
+      - name: Build the complete machine-verifiable attestation
         env:
           VERIFY_RUN_ID: ${{ github.run_id }}
           VERIFY_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          VERIFIED_HEAD_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -243,43 +361,106 @@ jobs:
           import json
           import os
 
-          temp = Path(os.environ["RUNNER_TEMP"])
-          attestation = json.loads((temp / "release-attestation.json").read_text(encoding="utf-8"))
-          install = json.loads((temp / "install-result.json").read_text(encoding="utf-8"))
-          ready = json.loads((temp / "ready-result.json").read_text(encoding="utf-8"))
-          attestation.update(
+          release = json.loads(
+              (Path("release-attestation") / "release-attestation.json").read_text(encoding="utf-8")
+          )
+          partitions = [
+              json.loads(path.read_text(encoding="utf-8"))
+              for path in sorted(Path("partition-verifications").glob("partition-verification-*.json"))
+          ]
+          expected = [str(year) for year in range(2017, 2027)]
+          actual = [item["partition_id"] for item in partitions]
+          if actual != expected:
+              raise SystemExit(f"partition verification set mismatch: {actual}")
+          if any(item.get("status") != "verified" for item in partitions):
+              raise SystemExit("one or more annual partitions are not verified")
+          if any(item["index_sha256"] != release["index_sha256"] for item in partitions):
+              raise SystemExit("partition verification index hashes disagree")
+
+          summary = {
+              "partition_count": len(partitions),
+              "archive_assets_verified": len(partitions),
+              "catalogs_verified": len(partitions),
+              "cataloged_files_checked": sum(
+                  int(item["verification"]["cataloged_files_checked"]) for item in partitions
+              ),
+              "cataloged_bytes_checked": sum(
+                  int(item["verification"]["cataloged_bytes_checked"]) for item in partitions
+              ),
+              "silver_files": sum(
+                  int(item["verification"]["silver_files"]) for item in partitions
+              ),
+              "gold_files": sum(int(item["verification"]["gold_files"]) for item in partitions),
+          }
+          expected_files = release["totals"]["files"]
+          if summary["silver_files"] != int(expected_files["silver"]):
+              raise SystemExit(
+                  f"Silver file total mismatch: verified={summary['silver_files']}, "
+                  f"index={expected_files['silver']}"
+              )
+          if summary["gold_files"] != int(expected_files["gold"]):
+              raise SystemExit(
+                  f"Gold file total mismatch: verified={summary['gold_files']}, "
+                  f"index={expected_files['gold']}"
+              )
+          if summary["cataloged_files_checked"] < summary["silver_files"] + summary["gold_files"]:
+              raise SystemExit("catalog verification did not cover every Silver and Gold file")
+
+          release.update(
               {
                   "status": "verified_ready_for_research",
                   "verified_at_utc": datetime.now(UTC).isoformat(),
                   "verification_workflow_run_id": int(os.environ["VERIFY_RUN_ID"]),
                   "verification_workflow_run_url": os.environ["VERIFY_RUN_URL"],
-                  "verified_repository_head": os.environ["VERIFIED_HEAD_SHA"],
-                  "installer_smoke_partition": "2017",
-                  "installer_result": install,
-                  "installed_release_verification": ready["verification"],
+                  "verified_repository_head": release["repository_commit"],
+                  "verified_partitions": expected,
+                  "partition_verification_mode": "all_years_isolated",
+                  "full_file_checksum_verification": True,
+                  "archive_sha256_verified": True,
+                  "extracted_file_sha256_verified": True,
+                  "verification_summary": summary,
+                  "partition_verifications": {
+                      item["partition_id"]: {
+                          "asset_file": item["asset_file"],
+                          "asset_sha256": item["asset_sha256"],
+                          "catalog_sha256": item["verification"]["catalog_sha256"],
+                          "cataloged_files_checked": item["verification"][
+                              "cataloged_files_checked"
+                          ],
+                          "cataloged_bytes_checked": item["verification"][
+                              "cataloged_bytes_checked"
+                          ],
+                          "silver_files": item["verification"]["silver_files"],
+                          "gold_files": item["verification"]["gold_files"],
+                      }
+                      for item in partitions
+                  },
                   "google_drive_required": False,
                   "exchange_download_required_for_researchers": False,
               }
           )
           output = Path(os.environ["RUNNER_TEMP"]) / "verified.json"
-          output.write_text(json.dumps(attestation, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          output.write_text(json.dumps(release, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           PY
 
+      - name: Commit completion attestation to main
+        run: |
+          set -euo pipefail
           git fetch origin main
           git checkout main
           git reset --hard origin/main
           mkdir -p "$(dirname "$STATUS_PATH")"
           cp "$RUNNER_TEMP/verified.json" "$STATUS_PATH"
+          if git ls-files --error-unmatch "$FAILURE_PATH" >/dev/null 2>&1; then
+            rm -f "$FAILURE_PATH"
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add "$STATUS_PATH"
-          if git ls-files --error-unmatch "$FAILURE_PATH" >/dev/null 2>&1; then
-            rm -f "$FAILURE_PATH"
-            git add -u -- "$FAILURE_PATH"
-          fi
+          git add -u -- "$FAILURE_PATH" 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "completion attestation already current"
             exit 0
           fi
-          git commit -m "attest full-history distribution is ready for research"
+          git commit -m "attest every full-history partition is ready for research"
           git push origin HEAD:main
