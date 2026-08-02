@@ -8,7 +8,7 @@ build/
 dist/
 *.egg-info/
 
-# Bulk data belongs in Google Drive/object storage, never Git.
+# Local acquisition/build workspaces are generated and never committed.
 data/raw/
 data/silver/
 data/gold/
@@ -18,6 +18,10 @@ data/catalog/
 *.parquet
 *.csv.gz
 *.duckdb
+
+# The versioned, validated default research release is intentionally committed.
+!data/prepared/
+!data/prepared/**
 
 # Keep reproducibility metadata.
 !data/manifests/
