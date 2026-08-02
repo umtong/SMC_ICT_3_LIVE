@@ -1,0 +1,35 @@
+name: snapshot-full-history-release
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/snapshot-full-history-release.yml
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Print current publication run and jobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload=$(gh run list \
+            --repo "$GITHUB_REPOSITORY" \
+            --workflow build-full-history-release.yml \
+            --branch main \
+            --limit 1 \
+            --json databaseId,status,conclusion,headSha,url,createdAt)
+          echo "$payload" | jq .
+          test "$(jq length <<<"$payload")" -eq 1
+          run_id=$(jq -r '.[0].databaseId' <<<"$payload")
+          echo "PUBLICATION_RUN_ID=$run_id"
+          gh run view "$run_id" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json databaseId,status,conclusion,url,jobs | jq .
